@@ -99,6 +99,7 @@ io.on('connection', async (socket) => {
 
     if (recipientSocketId) {
       io.to(recipientSocketId).emit('receiveMessage', { sender, message });
+      console.log('receiving logs:', sender, message)
     } else {
       console.log(`User ${receiver} is not connected.`);
       // Handle the case where the recipient is not connected
