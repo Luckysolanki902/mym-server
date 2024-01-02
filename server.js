@@ -3,10 +3,9 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const User = require('./models/User');
-const app = express();
 const mongoose = require('mongoose');
 
+const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -16,8 +15,7 @@ const io = new Server(server, {
 });
 app.use(cors());
 
-mongoose
-  .connect(process.env.MONGODB_URI, {})
+mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB');
   })
@@ -25,152 +23,148 @@ mongoose
     console.error('Connection error:', error);
   });
 
-const usersFindingPair = {};
-const pairingDurationInSeconds = 10; // Define the duration for attempting pairing (editable)
+const User = require('./models/User');
 
-const handleUserConnection = async (
-  socket,
-  displayName,
-  strangerGender,
-  strangerCollege,
-  previousStranger,
-) => {
-  if(previousStranger){
-    console.log(previousStranger)
-  }
-  console.log(
-    `User connected: ${displayName} and wants stranger to be ${strangerGender} from ${strangerCollege} college`
-  );
-  let user = await User.findOne({ email: displayName });
-
-  if (user) {
-    try {
-      await user.toggleActivity(true);
-      await user.togglePairedStatus(false);
-    } catch (error) {
-      console.log('error toggling bools:', error)
-    }
-
-    usersFindingPair[socket.id] = {
-      displayName: displayName,
-      isActive: user.isActive,
-      isPaired: user.isPaired,
-      gender: user.gender,
-      college: user.college,
-    };
-
-
-    const tryPairing = setInterval(async () => {
-      if (previousStranger) {
-        const previousStrangerSocketId = Object.keys(usersFindingPair).find(
-          (id) => usersFindingPair[id].displayName === previousStranger
-        );
-        console.log(previousStranger, previousStrangerSocketId)
-
-
-        if (previousStrangerSocketId) {
-          console.log(`Emitting 'strangerunpaired' to previous stranger: ${previousStranger}`);
-          io.to(previousStrangerSocketId).emit('strangerUnpaired');
-          console.log(previousStrangerSocketId)
-        }
-      }
-      const connectedUserIds = Object.keys(usersFindingPair);
-      const availableUsers = connectedUserIds.filter(
-        (id) =>
-          !usersFindingPair[id].isPaired &&
-          id !== socket.id &&
-          usersFindingPair[id].isActive &&
-          usersFindingPair[id].gender === strangerGender &&
-          (strangerCollege === 'any' || usersFindingPair[id].college === strangerCollege)
-      );
-
-      if (availableUsers.length > 0) {
-        const randomIndex = Math.floor(Math.random() * availableUsers.length);
-        const randomUser = usersFindingPair[availableUsers[randomIndex]];
-
-        if (randomUser && randomUser.displayName !== displayName) {
-          user.isPaired = true;
-          randomUser.isPaired = true;
-          const updateUserPromises = [
-            User.updateOne({ email: user.email }, { isPaired: true }),
-            User.updateOne({ email: randomUser.displayName }, { isPaired: true }),
-          ];
-
-          await Promise.all(updateUserPromises);
-
-          console.log(
-            `Users ${displayName} and ${randomUser.displayName} got connected to each other.`
-          );
-
-          io.to(socket.id).emit('paired', { displayName, receiver: randomUser.displayName, user: user,receiverGender: randomUser.gender, });
-
-          clearInterval(tryPairing); // Stop trying to pair once successful
-        }
-      }
-    }, 1000); // Check for pairing every second
-
-    setTimeout(() => {
-      clearInterval(tryPairing); // Stop trying to pair after the specified duration
-    }, pairingDurationInSeconds * 1000);
-  } else {
-    console.log(`User ${displayName} not found in the database.`);
-  }
-};
+const activeUsers = new Map(); // Store active users waiting for pairing
 
 io.on('connection', async (socket) => {
-  const handlePairConnection = async ({ displayName, strangerGender, strangerCollege, previousStranger }) => {
-    await handleUserConnection(socket, displayName, strangerGender, strangerCollege, previousStranger);
-  };
+  console.log('User connected:', socket.id);
 
-  socket.on('user connected', handlePairConnection);
-  socket.on('findNewPair', handlePairConnection);
+  socket.on('user connected', async ({ userName, strangerGender, strangerCollege }) => {
+    const user = await User.findOneAndUpdate({ email: userName }, { $set: { isPaired: false, isActive: true } }, { new: true }).exec();
+    if (user) {
+      activeUsers.set(socket.id, {
+        id: socket.id,
+        user,
+        preferences: {
+          strangerGender,
+          strangerCollege,
+        },
+      });
 
-  socket.on('sendMessage', ({ sender, receiver, message }) => {
-    console.log(sender, receiver, message);
-    console.log(`Message from ${sender} to ${receiver}: ${message}`);
-
-    const recipientSocketId = Object.keys(usersFindingPair).find(
-      (id) => usersFindingPair[id].displayName === receiver
-    );
-
-    const senderSocketId = Object.keys(usersFindingPair).find(
-      (id) => usersFindingPair[id].displayName === sender
-    );
-
-    // Handling messages to the recipient
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('receiveMessage', { sender, message });
-      console.log('receiving logs:', sender, message);
-    } else {
-      console.log(`User ${receiver} is not connected.`);
-      // Handle the case where the recipient is not connected
-    }
-
-    // Handling messages to the sender
-    if (senderSocketId) {
-      io.to(senderSocketId).emit('receiveMessage', { sender, message });
-    } else {
-      console.log(`User ${sender} is not connected.`);
-      // Handle the case where the sender is not connected
+      tryPairing(socket);
     }
   });
 
   socket.on('disconnect', async () => {
-    if (usersFindingPair[socket.id]) {
-      const disconnectedUser = usersFindingPair[socket.id].displayName;
-      let user = await User.findOne({ email: disconnectedUser });
-      if (user) {
-        await user.toggleActivity(false);
-        await user.togglePairedStatus(false);
+    console.log('User disconnected:', socket.id);
+
+    if (activeUsers.has(socket.id)) {
+      const { user } = activeUsers.get(socket.id);
+      user.isActive = false; // Set user as inactive
+
+      const partnerId = getPartnerId(socket.id); // Function to get partner ID
+      if (partnerId) {
+        io.to(partnerId).emit('partnerDisconnected'); // Notify the partner
+        const partner = activeUsers.get(partnerId);
+        partner.user.isPaired = false; // Set partner's isPaired to false
+        await User.findOneAndUpdate({ email: partner.user.email }, { $set: { isPaired: false } }).exec();
       }
-      delete usersFindingPair[socket.id];
-      console.log(`User disconnected: ${disconnectedUser}`);
+
+      await User.findOneAndUpdate({ email: user.email }, { $set: { isActive: false } }).exec();
+
+      activeUsers.delete(socket.id);
+      // Handle user leaving the chat (notify the partner, etc.)
     }
+  });
+
+  socket.on('newPairing', ({ strangerGender, strangerCollege }) => {
+    if (activeUsers.has(socket.id)) {
+      const user = activeUsers.get(socket.id);
+      if (!user.preferences) {
+        user.preferences = {}; // Initialize preferences if not defined
+      }
+      user.preferences.strangerGender = strangerGender;
+      user.preferences.strangerCollege = strangerCollege;
+  
+      tryPairing(socket);
+    }
+  });
+
+  // Inside the 'message' event listener in the server code
+  socket.on('message', (data) => {
+    const { room, message } = data;
+    // Emit message to the chat room
+    io.to(room).emit('message', { message, sender: socket.id });
+    console.log(message, socket.id, room)
+    // Log the message being sent
+    console.log(`Message sent from ${socket.id} in room ${room}: ${message}`);
+    // Implement message storage, validation, etc., here
+  });
+
+
+  socket.on('typing', (room) => {
+    socket.to(room).emit('typing', socket.id);
+  });
+
+  socket.on('stoppedTyping', (room) => {
+    socket.to(room).emit('stoppedTyping', socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3001;
+const getPartnerId = (currentSocketId) => {
+  for (const [key, value] of activeUsers) {
+    if (key !== currentSocketId) {
+      return key; // Return partner's socket ID
+    }
+  }
+  return null;
+};
 
+const tryPairing = async (socket) => {
+  const usersArray = Array.from(activeUsers.values());
+
+  for (let i = 0; i < usersArray.length - 1; i++) {
+    const currentUser = usersArray[i];
+
+    if (!currentUser.user.isPaired && currentUser.user.isActive) {
+      for (let j = i + 1; j < usersArray.length; j++) {
+        const user = usersArray[j];
+
+        if (
+          user.user.isActive &&
+          !user.user.isPaired &&
+          user.user.email !== currentUser.user.email &&
+          (currentUser.preferences.strangerGender === 'any' || currentUser.preferences.strangerGender === user.user.gender) &&
+          (currentUser.preferences.strangerCollege === 'any' || currentUser.preferences.strangerCollege === user.user.college)
+        ) {
+          currentUser.user.isPaired = true;
+          user.user.isPaired = true;
+
+          const room = `chat-room-${currentUser.id}-${user.id}`;
+          socket.join(room);
+          io.to(user.id).emit('chatStart', { room });
+          socket.emit('chatStart', { room });
+
+          // Log the connection between user1 and user2
+          console.log(`${currentUser.user.email} and ${user.user.email} got connected to each other in the room ${room}`);
+
+          // Use Promise.all to save both documents sequentially
+          await Promise.all([
+            User.findOneAndUpdate({ email: currentUser.user.email }, { $set: { isPaired: true } }).exec(),
+            User.findOneAndUpdate({ email: user.user.email }, { $set: { isPaired: true } }).exec(),
+          ]);
+
+          return;
+        }
+      }
+    }
+  }
+
+  // Reset 'isPaired' status for users who are not paired after a delay
+  setTimeout(() => {
+    for (const user of usersArray) {
+      if (!user.user.isPaired && user.user.isActive) {
+        user.user.isPaired = false;
+      }
+    }
+    tryPairing(socket);
+  }, 2000); // Adjust the delay duration as needed
+};
+
+
+
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
