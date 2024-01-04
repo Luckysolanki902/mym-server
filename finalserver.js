@@ -3,7 +3,6 @@ const http = require('http');
 const socketIO = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 
-
 const app = express();
 const server = http.createServer(app);
 
@@ -15,10 +14,12 @@ const io = socketIO(server, {
   },
 });
 
+const webRTCServer = new Server(server); 
+
 const users = new Map(); // Store connected users by userId
 const rooms = new Map(); // Store active rooms
 
-// Socket.IO event handling
+// Socket.IO event handling____________________
 io.on('connection', (socket) => {
   let userId = null;
 
@@ -138,6 +139,29 @@ socket.on('message', (data) => {
     }
   });
 });
+
+
+// webrtc event handling_______________________
+webRTCServer.on('connection', (peer) => {
+  const peerId = peer.id;
+
+  console.log('WebRTC peer connected:', peerId);
+
+  // Event fired when a peer disconnects from WebRTC connection
+  peer.on('disconnect', () => {
+    console.log('WebRTC peer disconnected:', peerId);
+    // Perform any necessary cleanup or notification
+  });
+
+  // Handle other WebRTC events such as video stream, data exchange, etc.
+  // Implement WebRTC signaling, negotiation, and stream handling here
+});
+
+
+
+
+
+
 // Function to pair users based on preferences
 function pairUsers(userId) {
   const user = users.get(userId);
