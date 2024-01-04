@@ -3,7 +3,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
-
+const port = process.env.PORT || 3001;
 const app = express();
 const server = http.createServer(app);
 app.use(cors({
@@ -233,11 +233,12 @@ function getPairedUserId(roomId, userId) {
 }
 
 // Server listening on port 8080
-server.listen(8080, () => {
-  console.log('Server started on port 8080');
+server.listen(port, () => {
+  console.log('Server started on port', port);
 });
 
 // Error handling for unhandled promise rejections
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled Promise Rejection:', error);
 });
+ 
