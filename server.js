@@ -25,7 +25,7 @@ const rooms = new Map(); // Store active rooms
 io.on('connection', (socket) => {
   let userId = null;
 
-  console.log('User connected:', socket.id);
+  console.log('A User connected:');
 
   // Event fired when a new user identifies themselves
   socket.on('identify', (data) => {
@@ -36,7 +36,7 @@ io.on('connection', (socket) => {
       preferredGender,
       preferredCollege
     } = data;
-    console.log(data)
+
 
     userId = userEmail;
 
@@ -55,7 +55,6 @@ io.on('connection', (socket) => {
 // findnew event__________________________________
 socket.on('findNewPair', (data) => {
   if (userId && users.has(userId)) {
-    console.log(userId, 'userId')
     const {
       userEmail,
       userGender,
@@ -63,7 +62,6 @@ socket.on('findNewPair', (data) => {
       preferredGender,
       preferredCollege
     } = data;
-    console.log('got data as:', userEmail, userGender, userCollege, preferredGender, preferredCollege)
 
     // Update the user's preferences in the users Map
     const user = users.get(userId);
@@ -100,8 +98,7 @@ socket.on('findNewPair', (data) => {
 
 
 
-    // console.log('users:',users)
-    console.log('users map length is:', users.size)
+    console.log('users online are:', users.size)
     // Pair users based on preferences
     pairUsers(userId);
   });
@@ -118,7 +115,7 @@ socket.on('message', (data) => {
 
   // Event fired when a user disconnects
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('1 User disconnected:');
     if (userId && users.has(userId)) {
       const {
         room,
@@ -205,6 +202,7 @@ function pairUsers(userId) {
         strangerGender: user.userGender,
       });
     }
+    console.log('Made a pair')
   }
 } 
 
@@ -235,7 +233,7 @@ function getPairedUserId(roomId, userId) {
 
 // Server listening on port 3001
 server.listen(1000, () => {
-  console.log('Server started on port 1000');
+  console.log('Server started');
 });
 
 // Error handling for unhandled promise rejections
