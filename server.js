@@ -231,9 +231,11 @@ function getPairedUserId(roomId, userId) {
   }
   return null;
 }
+
+
 // Server listening on port 3001
-server.listen(3001, () => {
-  console.log('Server started on port 3001');
+server.listen(1000, () => {
+  console.log('Server started on port 1000');
 });
 
 // Error handling for unhandled promise rejections
