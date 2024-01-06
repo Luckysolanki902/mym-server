@@ -83,7 +83,7 @@ io.on('connection', (socket) => {
       if (userId && users.has(userId)) {
         const { room } = users.get(userId);
         if (rooms.has(room)) {
-          const pair = rooms.get(roomId);
+          const pair = rooms.get(room);
           pair.forEach((userId) => {
             if (userId !== userId && users.has(userId)) {
               const receiverSocket = users.get(userId).socket;
@@ -98,7 +98,7 @@ io.on('connection', (socket) => {
       if (userId && users.has(userId)) {
         const { room } = users.get(userId);
         if (rooms.has(room)) {
-          const pair = rooms.get(roomId);
+          const pair = rooms.get(room);
           pair.forEach((userId) => {
             if (userId !== userId && users.has(userId)) {
               const receiverSocket = users.get(userId).socket;
