@@ -26,24 +26,6 @@ const rooms = new Map(); // Store active rooms
 let roundedUsers = 0;
 
 // Function to calculate and update rounded user count
-function updateRoundedUsersCount() {
-  let newRoundedUsers = users.size;
-
-  // Round to the nearest power of 10 based on specific thresholds
-  if (newRoundedUsers >= 5 && newRoundedUsers < 10) {
-    newRoundedUsers = 10;
-  } else if (newRoundedUsers >= 10 && newRoundedUsers < 20) {
-    newRoundedUsers = 20;
-  } else {
-    newRoundedUsers = Math.pow(10, Math.ceil(Math.log10(newRoundedUsers)));
-  }
-
-  // Emit the updated rounded user count if it changes
-  if (newRoundedUsers !== roundedUsers) {
-    roundedUsers = newRoundedUsers;
-    io.emit('roundedUsersCount', roundedUsers);
-  }
-}
 
 
 // Socket.IO event handling
@@ -54,6 +36,7 @@ io.on('connection', (socket) => {
 
   // Event fired when a new user identifies themselves
   socket.on('identify', (data) => {
+    emitRoundedUsersCount();
     const {
       userEmail,
       userGender,
@@ -115,10 +98,32 @@ io.on('connection', (socket) => {
       }
     });
 
+    // number of users online
+    function emitRoundedUsersCount() {
+      let roundedCount = 0;
+      const userCount = users.size;
 
+      if (userCount < 5) {
+        roundedCount = 5;
+      } else if (userCount >= 5 && userCount < 10) {
+        roundedCount = 10;
+      } else if (userCount >= 10 && userCount < 15) {
+        roundedCount = 15;
+      } else if (userCount >= 15 && userCount < 100) {
+        roundedCount = Math.ceil(userCount / 10) * 10;
+      } else if (userCount >= 100 && userCount < 1000) {
+        roundedCount = Math.ceil(userCount / 50) * 50;
+      } else if (userCount >= 1000) {
+        roundedCount = Math.ceil(userCount / 100) * 100;
+      }
+
+      // Emit the rounded user count
+      io.emit('roundedUsersCount', roundedCount);
+    }
 
     // findnew event__________________________________
     socket.on('findNewPair', (data) => {
+      emitRoundedUsersCount();
       if (userId && users.has(userId)) {
         const {
           userEmail,
@@ -155,8 +160,6 @@ io.on('connection', (socket) => {
           user.isPaired = false;
           user.room = null;
         }
-        // Update the rounded user count
-        updateRoundedUsersCount();
 
         // Pair the user again based on the updated preferences
         pairUsers(userId);
