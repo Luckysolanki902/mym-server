@@ -21,6 +21,31 @@ const io = socketIO(server, {
 const users = new Map(); // Store connected users by userId
 const rooms = new Map(); // Store active rooms
 
+
+// number of users online rounded off
+let roundedUsers = 0;
+
+// Function to calculate and update rounded user count
+function updateRoundedUsersCount() {
+  let newRoundedUsers = users.size;
+
+  // Round to the nearest power of 10 based on specific thresholds
+  if (newRoundedUsers >= 5 && newRoundedUsers < 10) {
+    newRoundedUsers = 10;
+  } else if (newRoundedUsers >= 10 && newRoundedUsers < 20) {
+    newRoundedUsers = 20;
+  } else {
+    newRoundedUsers = Math.pow(10, Math.ceil(Math.log10(newRoundedUsers)));
+  }
+
+  // Emit the updated rounded user count if it changes
+  if (newRoundedUsers !== roundedUsers) {
+    roundedUsers = newRoundedUsers;
+    io.emit('roundedUsersCount', roundedUsers);
+  }
+}
+
+
 // Socket.IO event handling
 io.on('connection', (socket) => {
   let userId = null;
@@ -52,49 +77,74 @@ io.on('connection', (socket) => {
       room: null,
     });
 
-// findnew event__________________________________
-socket.on('findNewPair', (data) => {
-  if (userId && users.has(userId)) {
-    const {
-      userEmail,
-      userGender,
-      userCollege,
-      preferredGender,
-      preferredCollege
-    } = data;
 
-    // Update the user's preferences in the users Map
-    const user = users.get(userId);
-    user.userEmail = userEmail;
-    user.userGender = userGender;
-    user.userCollege = userCollege;
-    user.preferredGender = preferredGender;
-    user.preferredCollege = preferredCollege;
-
-    const {
-      room,
-      isPaired
-    } = user;
-
-    // Disconnect the current room and inform the other user about the disconnection
-    if (isPaired && room && rooms.has(room)) {
-      const pairedUserId = getPairedUserId(room, userId);
-
-      if (pairedUserId && users.has(pairedUserId)) {
-        const pairedUser = users.get(pairedUserId);
-        pairedUser.socket.emit('pairDisconnected');
-        rooms.delete(room);
+    // Event fired when a user starts typing
+    socket.on('typing', () => {
+      const user = users.get(userId);
+      if (user) {
+        const { room } = user;
+        if (room && rooms.has(room)) {
+          socket.to(room).emit('userTyping', userId);
+        }
       }
+    });
 
-      rooms.delete(room);
-      user.isPaired = false;
-      user.room = null;
-    }
+    // Event fired when a user stops typing
+    socket.on('stoppedTyping', () => {
+      const user = users.get(userId);
+      if (user) {
+        const { room } = user;
+        if (room && rooms.has(room)) {
+          socket.to(room).emit('userStoppedTyping', userId);
+        }
+      }
+    });
 
-    // Pair the user again based on the updated preferences
-    pairUsers(userId);
-  }
-});
+    // findnew event__________________________________
+    socket.on('findNewPair', (data) => {
+      if (userId && users.has(userId)) {
+        const {
+          userEmail,
+          userGender,
+          userCollege,
+          preferredGender,
+          preferredCollege
+        } = data;
+
+        // Update the user's preferences in the users Map
+        const user = users.get(userId);
+        user.userEmail = userEmail;
+        user.userGender = userGender;
+        user.userCollege = userCollege;
+        user.preferredGender = preferredGender;
+        user.preferredCollege = preferredCollege;
+
+        const {
+          room,
+          isPaired
+        } = user;
+
+        // Disconnect the current room and inform the other user about the disconnection
+        if (isPaired && room && rooms.has(room)) {
+          const pairedUserId = getPairedUserId(room, userId);
+
+          if (pairedUserId && users.has(pairedUserId)) {
+            const pairedUser = users.get(pairedUserId);
+            pairedUser.socket.emit('pairDisconnected');
+            rooms.delete(room);
+          }
+
+          rooms.delete(room);
+          user.isPaired = false;
+          user.room = null;
+        }
+        // Update the rounded user count
+        updateRoundedUsersCount();
+
+        // Pair the user again based on the updated preferences
+        pairUsers(userId);
+      }
+    });
 
 
 
@@ -103,15 +153,15 @@ socket.on('findNewPair', (data) => {
     pairUsers(userId);
   });
 
-// Event fired when a user sends a message
-socket.on('message', (data) => {
-  const { type, content } = data;
+  // Event fired when a user sends a message
+  socket.on('message', (data) => {
+    const { type, content } = data;
 
-  if (type === 'message' && userId && users.has(userId)) {
-    const { room } = users.get(userId);
-    sendMessageToRoom(room, userId, content);
-  }
-});
+    if (type === 'message' && userId && users.has(userId)) {
+      const { room } = users.get(userId);
+      sendMessageToRoom(room, userId, content);
+    }
+  });
 
   // Event fired when a user disconnects
   socket.on('disconnect', () => {
@@ -204,7 +254,7 @@ function pairUsers(userId) {
     }
     console.log('Made a pair')
   }
-} 
+}
 
 
 
