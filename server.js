@@ -80,25 +80,35 @@ io.on('connection', (socket) => {
 
     // Event fired when a user starts typing
     socket.on('typing', () => {
-      const user = users.get(userId);
-      if (user) {
-        const { room } = user;
-        if (room && rooms.has(room)) {
-          socket.to(room).emit('userTyping', userId);
+      if (userId && users.has(userId)) {
+        const { room } = users.get(userId);
+        if (rooms.has(room)) {
+          const pair = rooms.get(roomId);
+          pair.forEach((userId) => {
+            if (userId !== userId && users.has(userId)) {
+              const receiverSocket = users.get(userId).socket;
+              receiverSocket.emit('userTyping', userId);
+            }
+          });
+        }
+      }
+    });
+    // Event fired when a user stops typing
+    socket.on('stoppedTyping', () => {
+      if (userId && users.has(userId)) {
+        const { room } = users.get(userId);
+        if (rooms.has(room)) {
+          const pair = rooms.get(roomId);
+          pair.forEach((userId) => {
+            if (userId !== userId && users.has(userId)) {
+              const receiverSocket = users.get(userId).socket;
+              receiverSocket.emit('userStoppedTyping', userId);
+            }
+          });
         }
       }
     });
 
-    // Event fired when a user stops typing
-    socket.on('stoppedTyping', () => {
-      const user = users.get(userId);
-      if (user) {
-        const { room } = user;
-        if (room && rooms.has(room)) {
-          socket.to(room).emit('userStoppedTyping', userId);
-        }
-      }
-    });
 
     // findnew event__________________________________
     socket.on('findNewPair', (data) => {
