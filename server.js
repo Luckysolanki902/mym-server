@@ -78,36 +78,43 @@ io.on('connection', (socket) => {
     });
 
 
-    // Event fired when a user starts typing
     socket.on('typing', () => {
+      console.log('getting typing log')
       if (userId && users.has(userId)) {
         const { room } = users.get(userId);
         if (rooms.has(room)) {
           const pair = rooms.get(room);
-          pair.forEach((userId) => {
-            if (userId !== userId && users.has(userId)) {
-              const receiverSocket = users.get(userId).socket;
+          pair.forEach((pairedUserId) => {
+            if (pairedUserId !== userId && users.has(pairedUserId)) {
+              const receiverSocket = users.get(pairedUserId).socket;
+              console.log('emitting typing log')
+
               receiverSocket.emit('userTyping', userId);
             }
           });
         }
       }
     });
-    // Event fired when a user stops typing
+
     socket.on('stoppedTyping', () => {
+      console.log('getting typing log')
+
       if (userId && users.has(userId)) {
         const { room } = users.get(userId);
         if (rooms.has(room)) {
           const pair = rooms.get(room);
-          pair.forEach((userId) => {
-            if (userId !== userId && users.has(userId)) {
-              const receiverSocket = users.get(userId).socket;
+          pair.forEach((pairedUserId) => {
+            if (pairedUserId !== userId && users.has(pairedUserId)) {
+              const receiverSocket = users.get(pairedUserId).socket;
+              console.log('getting typing log')
+
               receiverSocket.emit('userStoppedTyping', userId);
             }
           });
         }
       }
     });
+
 
 
     // findnew event__________________________________
