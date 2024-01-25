@@ -6,10 +6,13 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
+
+
 app.use(cors({
   origin: '*', // Allow requests from all origins
   methods: ['GET', 'POST'],
 }));
+
 // Socket.IO setup
 const io = socketIO(server, {
   cors: {
@@ -32,7 +35,7 @@ let roundedUsers = 0;
 io.on('connection', (socket) => {
   let userId = null;
 
-  console.log('A User connected:');
+  console.log('A User connected');
 
   // Event fired when a new user identifies themselves
   socket.on('identify', (data) => {
@@ -62,7 +65,6 @@ io.on('connection', (socket) => {
 
 
     socket.on('typing', () => {
-      console.log('getting typing log')
       if (userId && users.has(userId)) {
         const { room } = users.get(userId);
         if (rooms.has(room)) {
@@ -70,8 +72,6 @@ io.on('connection', (socket) => {
           pair.forEach((pairedUserId) => {
             if (pairedUserId !== userId && users.has(pairedUserId)) {
               const receiverSocket = users.get(pairedUserId).socket;
-              console.log('emitting typing log')
-
               receiverSocket.emit('userTyping', userId);
             }
           });
@@ -80,8 +80,6 @@ io.on('connection', (socket) => {
     });
 
     socket.on('stoppedTyping', () => {
-      console.log('getting typing log')
-
       if (userId && users.has(userId)) {
         const { room } = users.get(userId);
         if (rooms.has(room)) {
@@ -89,8 +87,6 @@ io.on('connection', (socket) => {
           pair.forEach((pairedUserId) => {
             if (pairedUserId !== userId && users.has(pairedUserId)) {
               const receiverSocket = users.get(pairedUserId).socket;
-              console.log('getting typing log')
-
               receiverSocket.emit('userStoppedTyping', userId);
             }
           });
@@ -140,7 +136,8 @@ io.on('connection', (socket) => {
         user.userCollege = userCollege;
         user.preferredGender = preferredGender;
         user.preferredCollege = preferredCollege;
-
+        // user.socket = socket;
+        // try setting it
         const {
           room,
           isPaired
@@ -185,7 +182,7 @@ io.on('connection', (socket) => {
 
   // Event fired when a user disconnects
   socket.on('disconnect', () => {
-    console.log('1 User disconnected:');
+    console.log('A User disconnected');
     if (userId && users.has(userId)) {
       const {
         room,
