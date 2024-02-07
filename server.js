@@ -196,7 +196,7 @@ io.on('connection', (socket) => {
 
         if (pairedUserId && users.has(pairedUserId)) {
           const pairedUser = users.get(pairedUserId);
-          pairedUser.socket.emit('pairDisconnected');
+          pairedUser.socket.emit('pairDisconnectedStrict');
           users.delete(pairedUserId);
         }
 
