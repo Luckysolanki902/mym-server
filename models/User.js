@@ -1,25 +1,36 @@
+// models/user.js
 const mongoose = require('mongoose');
 
-const UserSchema = new mongoose.Schema({
-  email: {
+const userSchema = new mongoose.Schema({
+  userEmail: {
     type: String,
     required: true,
-    unique: true,
+    unique: true
   },
-  gender: {
+  userGender: {
     type: String,
-    required: true,
+    required: true
   },
-
-  college: {
+  userCollege: {
     type: String,
-    required: true,
+    required: true
   },
+  preferredGender: {
+    type: String,
+    required: true
+  },
+  preferredCollege: {
+    type: String,
+    required: true
+  },
+  isPaired: {
+    type: Boolean,
+    default: false
+  },
+  room: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Room'
+  }
+});
 
-}, { timestamps: true }); // Adding timestamps for createdAt and updatedAt
-
-mongoose.models = {};
-const User = mongoose.model('User', UserSchema);
-
-module.exports = User;
- 
+module.exports = mongoose.model('User', userSchema);
