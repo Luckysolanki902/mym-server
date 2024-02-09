@@ -5,32 +5,30 @@ const userSchema = new mongoose.Schema({
   userEmail: {
     type: String,
     required: true,
-    unique: true
   },
   userGender: {
     type: String,
-    required: true
+    required: true,
   },
   userCollege: {
     type: String,
-    required: true
+    required: true,
   },
   preferredGender: {
     type: String,
-    required: true
+    required: true,
   },
   preferredCollege: {
     type: String,
-    required: true
+    required: true,
   },
   isPaired: {
     type: Boolean,
-    default: false
+    default: false,
   },
   room: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Room'
-  }
+    type: String, // Assuming the room identifier is a string
+  },
 });
 
 module.exports = mongoose.model('User', userSchema);
