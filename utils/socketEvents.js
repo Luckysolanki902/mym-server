@@ -96,9 +96,8 @@ function handleSocketEvents(io, socket, users) {
         const pairedUserId = getPairedUserId(users, io, user.room, userId);
         if (pairedUserId && users.has(pairedUserId)) {
           const pairedUser = users.get(pairedUserId);
-
           try {
-            pairedUser.socket.emit('pairDisconnectedStrict'); 
+            pairedUser.socket.emit('pairDisconnected'); 
             pairedUser.socket.leave(user.room); 
             pairedUser.isPaired = false; // Update pairings status
             pairedUser.room = null; 
