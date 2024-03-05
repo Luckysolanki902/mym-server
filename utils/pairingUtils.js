@@ -5,13 +5,13 @@ function pairUsers(userId, users, io) {
 
   // Prioritization logic (can be customized further)
   const scoreCriteria = [
-    { 
-      criteria: (otherUser) => otherUser.preferredGender === user.userGender,  
+    {
+      criteria: (otherUser) => otherUser.preferredGender === user.userGender,
       weight: 2 // Higher weight for matching gender preference
-    }, 
-    { 
-      criteria: (otherUser) => otherUser.preferredCollege === user.userCollege, 
-      weight: 1  // Lower weight for matching college preference
+    },
+    {
+      criteria: (otherUser) => otherUser.preferredCollege === user.userCollege,
+      weight: 1 // Lower weight for matching college preference
     },
   ];
 
@@ -20,7 +20,7 @@ function pairUsers(userId, users, io) {
 
   for (const otherUser of users.values()) {
     if (
-      otherUser.userEmail !== userId && 
+      otherUser.userEmail !== userId &&
       !otherUser.isPaired
     ) {
       let score = 0;
@@ -28,9 +28,9 @@ function pairUsers(userId, users, io) {
       for (const criterion of scoreCriteria) {
         if (
           criterion.criteria(otherUser) ||
-          otherUser.preferredGender === 'any' || 
+          otherUser.preferredGender === 'any' ||
           user.preferredGender === 'any' ||
-          otherUser.preferredCollege === 'any' || 
+          otherUser.preferredCollege === 'any' ||
           user.preferredCollege === 'any'
         ) {
           score += criterion.weight;
@@ -47,7 +47,7 @@ function pairUsers(userId, users, io) {
   if (bestMatch) {
     const roomId = uuidv4();
 
-    // Pair the users 
+    // Pair the users
     user.isPaired = true;
     user.room = roomId;
     user.pairedSocketId = bestMatch.socket.id;
@@ -57,23 +57,23 @@ function pairUsers(userId, users, io) {
 
     // Join the users to the room
     user.socket.join(roomId);
-    bestMatch.socket.join(roomId); 
+    bestMatch.socket.join(roomId);
 
-    // Emit pairing success events 
+    // Emit pairing success events
     user.socket.emit('pairingSuccess', { roomId, strangerGender: bestMatch.userGender, stranger: bestMatch.userEmail });
     bestMatch.socket.emit('pairingSuccess', { roomId, strangerGender: user.userGender, stranger: user.userEmail });
   }
 }
 
-function sendMessageToRoom(io, roomId, senderUserId, content) {
-  io.to(roomId).emit('message', { type: 'message', sender: senderUserId, content }); 
+function sendMessageToRoom(io, pageType, roomId, senderUserId, content) {
+  io.to(roomId).emit('message', { type: 'message', sender: senderUserId, content, pageType });
 }
 
 function getPairedUserId(users, io, roomId, userId) {
-  const room = io.sockets.adapter.rooms.get(roomId); 
+  const room = io.sockets.adapter.rooms.get(roomId);
 
   if (room) {
-    for (const id of room) { 
+    for (const id of room) {
       if (id !== userId && users.has(id)) {
         return id;
       }
