@@ -75,8 +75,8 @@ process.on('unhandledRejection', (error) => {
 
 // Uncomment the following lines if you want to log the server status at regular intervals
 
-setInterval(() => {
-  console.log(`Text Chat Rooms: ${textChatRooms.size}, Text Chat Queue: ${textChatQueue.length}, Text Chat Users: ${textChatUsers.size}`);
-  // console.log(`Audio Call Rooms: ${audioCallRooms.size}, Audio Call Queue: ${audioCallQueue.length}, Audio Call Users: ${audioCallUsers.size}`);
-  // console.log(`Video Call Rooms: ${videoCallRooms.size}, Video Call Queue: ${videoCallQueue.length}, Video Call Users: ${videoCallUsers.size}`);
-}, 9000);
+// setInterval(() => {
+//   console.log(`Text Chat Rooms: ${textChatRooms.size}, Text Chat Queue: ${textChatQueue.length}, Text Chat Users: ${textChatUsers.size}`);
+//   // console.log(`Audio Call Rooms: ${audioCallRooms.size}, Audio Call Queue: ${audioCallQueue.length}, Audio Call Users: ${audioCallUsers.size}`);
+//   // console.log(`Video Call Rooms: ${videoCallRooms.size}, Video Call Queue: ${videoCallQueue.length}, Video Call Users: ${videoCallUsers.size}`);
+// }, 9000);

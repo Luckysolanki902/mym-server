@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 function pairUsers(userQueue, usersMap, io, userRooms) {
   try {
     if (!userQueue || userQueue.length < 2) {
-      throw new Error('Insufficient users in the queue.');
+      return
     }
 
     const userId1 = userQueue.shift();
@@ -14,7 +14,8 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
     const user2 = usersMap.get(userId2);
 
     if (!user1 || !user2) {
-      throw new Error('Invalid user data.');
+      console.log('user1 and user2 are not defined')
+     return
     }
 
     const preferenceMatch = checkPreferences(user1, user2);
