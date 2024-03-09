@@ -7,7 +7,6 @@ function pairUsers(queue, users, io) {
 
     const user1 = users.get(userId1);
     const user2 = users.get(userId2);
-    console.log(user1, user2)
     if (user1 && user2) {
       // Ensure both users still meet each other's preferences
       if (checkPreferences(user1, user2)) {
@@ -17,7 +16,6 @@ function pairUsers(queue, users, io) {
         user1.isPaired = true;
         user1.room = roomId;
         user1.pairedSocketId = user2.socket.id;
-
         user2.isPaired = true;
         user2.room = roomId;
         user2.pairedSocketId = user1.socket.id;
