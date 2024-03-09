@@ -60,7 +60,7 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
         userQueue.push(userId);
 
         console.log(`Users online for ${pageType} are:`, usersMap.size);
-        pairUsers(queue, users, io, pageType);
+        pairUsers(userQueue, users, io, pageType);
     });
 
     socket.on('typing', () => {
@@ -107,7 +107,7 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
             }
 
             userQueue.push(userId);
-            pairUsers(queue, users, io, pageType);
+            pairUsers(userQueue, users, io, pageType);
         }
     });
 
