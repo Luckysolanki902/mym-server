@@ -6,7 +6,6 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
     let userId = null;
     let usersMap = null;
     let userQueue = null;
-    let pageType = null;
 
     console.log('A User connected');
 
@@ -17,9 +16,9 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
             userCollege,
             preferredGender,
             preferredCollege,
+            pageType
         } = data;
 
-        pageType = data.pageType;
 
 
         userId = userEmail;
@@ -61,7 +60,7 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
         userQueue.push(userId);
 
         console.log(`Users online for ${pageType} are:`, usersMap.size);
-        tryPairUsers(userQueue, usersMap, io, pageType);
+        pairUsers(queue, users, io, pageType);
     });
 
     socket.on('typing', () => {
@@ -91,8 +90,8 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
                 userCollege,
                 preferredGender,
                 preferredCollege,
+                pageType
             } = data;
-            pageType = data.pageType;
             user.userEmail = userEmail;
             user.userGender = userGender;
             user.userCollege = userCollege;
@@ -108,7 +107,7 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
             }
 
             userQueue.push(userId);
-            tryPairUsers(userQueue, usersMap, io, pageType);
+            pairUsers(queue, users, io, pageType);
         }
     });
 
@@ -145,14 +144,10 @@ function handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCall
 
             usersMap.delete(userId);
             removeUserFromQueue(userId, userQueue);
-            tryPairUsers(userQueue, usersMap, io, pageType);
         }
     });
 }
 
-function tryPairUsers(queue, users, io, pageType) {
-    pairUsers(queue, users, io, pageType);
-}
 
 function removeUserFromQueue(userId, queue) {
     const index = queue.indexOf(userId);
