@@ -49,7 +49,7 @@ setInterval(() => {
   shuffleQueue(textChatQueue);
   shuffleQueue(audioCallQueue);
   shuffleQueue(videoCallQueue);
-}, 60000); // 60000 milliseconds = 1 minute
+}, 60000 * 10); // 60000 milliseconds = 1 minute
 
 
 io.on('connection', (socket) => {
