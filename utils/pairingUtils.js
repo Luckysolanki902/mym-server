@@ -1,85 +1,65 @@
 const { v4: uuidv4 } = require('uuid');
 
-function pairUsers(userId, users, io) {
-  const user = users.get(userId);
+function pairUsers(queue, users, io, pageType) {
+    if (queue.length >= 2) {
+        const userId1 = queue.shift();
+        const userId2 = queue.shift();
+        
+        const user1 = users.get(userId1);
+        const user2 = users.get(userId2);
 
-  // Prioritization logic (can be customized further)
-  const scoreCriteria = [
-    {
-      criteria: (otherUser) => otherUser.preferredGender === user.userGender,
-      weight: 2 // Higher weight for matching gender preference
-    },
-    {
-      criteria: (otherUser) => otherUser.preferredCollege === user.userCollege,
-      weight: 1 // Lower weight for matching college preference
-    },
-  ];
+        if (user1 && user2) {
+            // Ensure both users still meet each other's preferences
+            if (checkPreferences(user1, user2)) {
+                const roomId = uuidv4();
 
-  let bestMatch = null;
-  let maxScore = -1;
+                // Pair the users
+                user1.isPaired = true;
+                user1.room = roomId;
+                user1.pairedSocketId = user2.socket.id; 
 
-  for (const otherUser of users.values()) {
-    if (
-      otherUser.userEmail !== userId &&
-      !otherUser.isPaired
-    ) {
-      let score = 0;
+                user2.isPaired = true;
+                user2.room = roomId;
+                user2.pairedSocketId = user1.socket.id;
 
-      for (const criterion of scoreCriteria) {
-        if (
-          criterion.criteria(otherUser) ||
-          otherUser.preferredGender === 'any' ||
-          user.preferredGender === 'any' ||
-          otherUser.preferredCollege === 'any' ||
-          user.preferredCollege === 'any'
-        ) {
-          score += criterion.weight;
+                // Join the users to the room
+                user1.socket.join(roomId);
+                user2.socket.join(roomId);
+
+                // Emit pairing success events
+                user1.socket.emit('pairingSuccess', { roomId, strangerGender: user2.userGender, stranger: user2.userEmail });
+                user2.socket.emit('pairingSuccess', { roomId, strangerGender: user1.userGender, stranger: user1.userEmail });
+            } else {
+                // Users don't meet each other's preferences, put them back in the queue
+                queue.push(userId1, userId2);
+            }
         }
-      }
-
-      if (score > maxScore) {
-        maxScore = score;
-        bestMatch = otherUser;
-      }
     }
-  }
-
-  if (bestMatch) {
-    const roomId = uuidv4();
-
-    // Pair the users
-    user.isPaired = true;
-    user.room = roomId;
-    user.pairedSocketId = bestMatch.socket.id;
-    bestMatch.isPaired = true;
-    bestMatch.room = roomId;
-    bestMatch.pairedSocketId = user.socket.id;
-
-    // Join the users to the room
-    user.socket.join(roomId);
-    bestMatch.socket.join(roomId);
-
-    // Emit pairing success events
-    user.socket.emit('pairingSuccess', { roomId, strangerGender: bestMatch.userGender, stranger: bestMatch.userEmail });
-    bestMatch.socket.emit('pairingSuccess', { roomId, strangerGender: user.userGender, stranger: user.userEmail });
-  }
 }
 
-function sendMessageToRoom(io, pageType, roomId, senderUserId, content) {
-  io.to(roomId).emit('message', { type: 'message', sender: senderUserId, content, pageType });
+function checkPreferences(user1, user2) {
+    // Implement your preference checking logic here
+    return (
+        (user1.preferredCollege === 'any' || user1.preferredCollege === user2.userCollege) &&
+        (user2.preferredCollege === 'any' || user2.preferredCollege === user1.userCollege) &&
+        (user1.preferredGender === 'any' || user1.preferredGender === user2.userGender) &&
+        (user2.preferredGender === 'any' || user2.preferredGender === user1.userGender)
+    );
 }
 
 function getPairedUserId(users, io, roomId, userId) {
-  const room = io.sockets.adapter.rooms.get(roomId);
-
-  if (room) {
-    for (const id of room) {
-      if (id !== userId && users.has(id)) {
-        return id;
+    const room = io.sockets.adapter.rooms.get(roomId);
+  
+    if (room) {
+      for (const id of room) {
+        if (id !== userId && users.has(id)) {
+          return id;
+        }
       }
     }
+    return null;
   }
-  return null;
-}
+  
 
-module.exports = { pairUsers, sendMessageToRoom, getPairedUserId };
+
+module.exports = { pairUsers, getPairedUserId };

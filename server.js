@@ -19,13 +19,17 @@ const io = socketIO(server, {
   },
 });
 
-// Separate maps for each type of chat
+// Separate user-maps for each type of chat
 const textChatUsers = new Map();
 const audioCallUsers = new Map();
 const videoCallUsers = new Map();
+// Create centralized queues for each chat type
+const textChatQueue = [];
+const audioCallQueue = [];
+const videoCallQueue = [];
 
 io.on('connection', (socket) => {
-  handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCallUsers);
+  handleSocketEvents(io, socket, textChatUsers, audioCallUsers, videoCallUsers, textChatQueue, audioCallQueue, videoCallQueue);
 });
 
 server.listen(1000, () => {
