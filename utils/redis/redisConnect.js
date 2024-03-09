@@ -1,28 +1,21 @@
-const { createClient } = require('redis');
-require('dotenv').config();
-const REDIS_PORT = process.env.REDIS_PORT;
-const REDIS_HOST = process.env.REDIS_HOST;
-const REDIS_PASSWORD = process.env.REDIS_PASSWORD;
-const REDIS_USERNAME = process.env.REDIS_USERNAME;
+const redis = require('redis');
+const { promisify } = require('util');
 
-const REDIS_URL = `redis://${REDIS_USERNAME}:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}`;
+const client = redis.createClient();
 
-let redisClient;
+// Promisify Redis commands
+const rpushAsync = promisify(client.rPush).bind(client);
+const lpopAsync = promisify(client.lPop).bind(client);
+const smembersAsync = promisify(client.sMembers).bind(client);
+const delAsync = promisify(client.del).bind(client);
 
-try {
-    redisClient = createClient({
-        url: REDIS_URL,
-    });
+client.on('error', (err) => {
+  console.error(`Redis Error: ${err}`);
+});
 
-    redisClient.on('error', (err) => {
-        console.error('Redis Error:', err);
-    });
-
-    redisClient.on('connect', () => {
-        console.log('Connected to Redis');
-    });
-} catch (error) {
-    console.error('Error connecting to Redis:', error);
-}
-
-module.exports = redisClient;
+module.exports = {
+  rpushAsync,
+  lpopAsync,
+  smembersAsync,
+  delAsync,
+};
