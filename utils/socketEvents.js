@@ -141,46 +141,6 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
         }
     });
     
-    
-    socket.on('offer', (data) => {
-        try {
-            const { sdp, roomId } = data;
-            const user = usersMap.get(socket.userEmail);
-
-            if (user && user.room === roomId && user.pairedSocketId) {
-                io.to(user.pairedSocketId).emit('offer', { sdp, roomId });
-            }
-        } catch (error) {
-            console.error('Error in offer event:', error.message);
-        }
-    });
-
-    socket.on('answer', (data) => {
-        try {
-            const { sdp, roomId } = data;
-            const user = usersMap.get(socket.userEmail);
-
-            if (user && user.room === roomId && user.pairedSocketId) {
-                io.to(user.pairedSocketId).emit('answer', { sdp, roomId });
-            }
-        } catch (error) {
-            console.error('Error in answer event:', error.message);
-        }
-    });
-
-    socket.on('add-ice-candidate', (data) => {
-        try {
-            const { candidate, type, roomId } = data;
-            const user = usersMap.get(socket.userEmail);
-
-            if (user && user.room === roomId && user.pairedSocketId) {
-                io.to(user.pairedSocketId).emit('add-ice-candidate', { candidate, type, roomId });
-            }
-        } catch (error) {
-            console.error('Error in add-ice-candidate event:', error.message);
-        }
-    });
-
 
     socket.on('disconnect', () => {
         try {

@@ -1,14 +1,8 @@
 // utils/countingUtils.js
 
-function emitRoundedUsersCount(io, users) {
-    let roundedCount = 0;
-    const userCount = users.size;
+function emitRoundedUsersCount(io, size) {
+  // Emit the rounded user count
+  io.emit('roundedUsersCount', size);
+}
 
-    roundedCount = userCount + 1
-  
-    // Emit the rounded user count
-    io.emit('roundedUsersCount', roundedCount);
-  }
-  
-  module.exports = { emitRoundedUsersCount };
-   
+module.exports = { emitRoundedUsersCount };
