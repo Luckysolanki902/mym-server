@@ -4,38 +4,54 @@ const { v4: uuidv4 } = require('uuid');
 function pairUsers(userQueue, usersMap, io, userRooms) {
   try {
     if (!userQueue || userQueue.length < 2) {
-      return
+      return;
     }
 
-    const userId1 = userQueue.shift();
-    const userId2 = userQueue.shift();
+    for (let i = 0; i < Math.floor(userQueue.length / 2); i++) {
+      const userId = userQueue.shift();
+      const user = usersMap.get(userId);
 
-    const user1 = usersMap.get(userId1);
-    const user2 = usersMap.get(userId2);
+      if (!user) {
+        console.log('User is not defined');
+        continue; // Skip to the next iteration if user is not defined
+      }
 
-    if (!user1 || !user2) {
-      console.log('user1 and user2 are not defined')
-     return
-    }
+      const potentialMatches = userQueue.filter((otherUserId) => {
+        const otherUser = usersMap.get(otherUserId);
+        return otherUser && checkPreferences(user, otherUser);
+      });
 
-    const preferenceMatch = checkPreferences(user1, user2);
+      if (potentialMatches.length > 0) {
+        const randomIndex = Math.floor(Math.random() * potentialMatches.length);
+        const matchedUserId = potentialMatches[randomIndex];
 
-    if (preferenceMatch) {
-      const room = createRoom(user1, user2, userRooms);
-      user1.isPaired = true;
-      user1.room = room;
-      user1.pairedSocketId = user2.socket.id;
-      user2.isPaired = true;
-      user2.room = room;
-      user2.pairedSocketId = user1.socket.id;
+        const matchedUser = usersMap.get(matchedUserId);
 
-      user1.socket.join(room);
-      user2.socket.join(room);
-      user1.socket.emit('pairingSuccess', { room, strangerGender: user2.userGender, stranger: user2.userEmail });
-      user2.socket.emit('pairingSuccess', { room, strangerGender: user1.userGender, stranger: user1.userEmail });
-      emitRoundedUsersCount(io, usersMap.size);
-    } else {
-      userQueue.push(userId1, userId2);
+        const room = createRoom(user, matchedUser, userRooms);
+        user.isPaired = true;
+        user.room = room;
+        user.pairedSocketId = matchedUser.socket.id;
+        matchedUser.isPaired = true;
+        matchedUser.room = room;
+        matchedUser.pairedSocketId = user.socket.id;
+
+        user.socket.join(room);
+        matchedUser.socket.join(room);
+        user.socket.emit('pairingSuccess', {
+          room,
+          strangerGender: matchedUser.userGender,
+          stranger: matchedUser.userEmail,
+        });
+        matchedUser.socket.emit('pairingSuccess', {
+          room,
+          strangerGender: user.userGender,
+          stranger: user.userEmail,
+        });
+
+        emitRoundedUsersCount(io, usersMap.size);
+      } else {
+        userQueue.push(userId); // Put the user back in the queue since no match was found
+      }
     }
   } catch (error) {
     console.error('Error in pairUsers:', error.message);
@@ -74,6 +90,5 @@ function generateRoomId() {
     throw error;
   }
 }
-
 
 module.exports = { pairUsers };

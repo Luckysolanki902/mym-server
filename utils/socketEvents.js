@@ -1,4 +1,3 @@
-const { pairUsers} = require('./pairingUtils');
 const { emitRoundedUsersCount } = require('./countingUtils');
 
 function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
@@ -34,16 +33,15 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 room: null,
                 pairedSocketId: null,
             });
- 
+
             userQueue.push(userId);
 
             console.log(`Users online are:`, usersMap.size);
-            pairUsers(userQueue, usersMap, io, userRooms);
         } catch (error) {
             console.error('Error in identify event:', error.message);
         }
     });
- 
+
     socket.on('userTyping', (data) => {
         try {
             const { userEmail } = data;
@@ -73,17 +71,17 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
     socket.on('findNewPair', (data) => {
         try {
             console.log('finding new');
-    
+
             emitRoundedUsersCount(io, usersMap.size);
-    
+
             let user = usersMap.get(socket.userEmail);
-    
+
             if (!user) {
                 // User not found, run identify event
                 socket.emit('identify', data);
                 return;
             }
-    
+
             const {
                 userEmail,
                 userGender,
@@ -91,15 +89,15 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 preferredGender,
                 preferredCollege,
             } = data;
-    
+
             user.userEmail = userEmail;
             user.userGender = userGender;
             user.userCollege = userCollege;
             user.preferredGender = preferredGender;
             user.preferredCollege = preferredCollege;
-    
+
             let userId = userEmail;
-    
+
             if (user.isPaired && user.room && user.pairedSocketId) {
                 io.to(user.pairedSocketId).emit('pairDisconnected');
                 socket.leave(user.room);
@@ -108,15 +106,14 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 user.pairedSocketId = null;
             }
             userRooms.delete(user.room);
-    
+
             userQueue.push(userId);
-            pairUsers(userQueue, usersMap, io, userRooms);
             console.log(userQueue.length, 'is the length of queue')
         } catch (error) {
             console.error('Error in findNewPair event:', error.message);
         }
     });
-    
+
     socket.on('message', (data) => {
         try {
             const { type, content, userEmail } = data;
@@ -132,15 +129,15 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
     socket.on('stopFindingPair', () => {
         try {
             console.log('User stopped finding pair');
-            
+
             const userId = socket.userEmail;
             removeUserFromQueue(userId, userQueue, usersMap, userRooms);
-    
+
         } catch (error) {
             console.error('Error in stopFindingPair event:', error.message);
         }
     });
-    
+
 
     socket.on('disconnect', () => {
         try {
@@ -168,15 +165,14 @@ function removeUserFromQueue(userId, queue, usersMap, userRooms) {
         if (!userId) {
             return;
         }
-        
+
         const index = queue.indexOf(userId);
         if (index !== -1) {
             queue.splice(index, 1);
         }
-        
+
         const user = usersMap.get(userId);
 
-        console.log(user, 'room')
         if (user && user.room) {
             const roomId = user.room;
             userRooms.delete(roomId);
