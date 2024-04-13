@@ -34,13 +34,15 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 pairedSocketId: null,
             });
 
-            userQueue.push(userId);
+            if (!userQueue.includes(userId)) {
+                userQueue.push(userId);
+            }
 
             console.log(`Users online are:`, usersMap.size);
         } catch (error) {
             console.error('Error in identify event:', error.message);
         }
-    });
+    }); 
 
     socket.on('userTyping', (data) => {
         try {
@@ -73,6 +75,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
             console.log('finding new');
 
             emitRoundedUsersCount(io, usersMap.size);
+            console.log(`Users online, when someome is finding new pair, are:`, usersMap.size);
 
             let user = usersMap.get(socket.userEmail);
 
