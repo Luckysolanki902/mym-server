@@ -3,9 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 
 function pairUsers(userQueue, usersMap, io, userRooms) {
   try {
-    console.log('Pairing users...');
     if (!userQueue || userQueue.length < 2) {
-      console.log('Not enough users in the queue for pairing.');
       return;
     }
 
@@ -16,7 +14,6 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
       const user = usersMap.get(userId);
 
       if (!user) {
-        console.log('User is not defined');
         continue; // Skip to the next iteration if user is not defined
       }
 
@@ -25,10 +22,15 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
         continue;
       }
 
-      const potentialMatches = userQueue.filter((otherUserId) => {
+      let potentialMatches = userQueue.filter((otherUserId) => {
         const otherUser = usersMap.get(otherUserId);
         return otherUser && !pairedUsers.has(otherUserId) && checkPreferences(user, otherUser);
       });
+
+      if (potentialMatches.length === 0) {
+        // If no suitable match found based on preferences, pair randomly
+        potentialMatches = userQueue.filter((otherUserId) => !pairedUsers.has(otherUserId));
+      }
 
       if (potentialMatches.length > 0) {
         const randomIndex = Math.floor(Math.random() * potentialMatches.length);
@@ -54,7 +56,6 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
 
         user.socket.join(room);
         matchedUser.socket.join(room);
-        console.log(`Pairing success between ${user.userEmail} and ${matchedUser.userEmail}`);
         user.socket.emit('pairingSuccess', {
           room,
           strangerGender: matchedUser.userGender,
@@ -76,6 +77,7 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
   }
 }
 
+
 function createRoom(user1, user2, userRooms) {
   try {
     const roomId = generateRoomId();
@@ -83,7 +85,6 @@ function createRoom(user1, user2, userRooms) {
       user1,
       user2,
     });
-    console.log(`Room created with ID: ${roomId}`);
     return roomId;
   } catch (error) {
     console.error('Error in createRoom:', error.message);
@@ -104,7 +105,6 @@ function checkPreferences(user1, user2) {
 function generateRoomId() {
   try {
     const roomId = uuidv4();
-    console.log(`Generated Room ID: ${roomId}`);
     return roomId;
   } catch (error) {
     console.error('Error in generateRoomId:', error.message);
