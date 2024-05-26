@@ -146,6 +146,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
         }
     });
 
+    
 
     socket.on('message', (data) => {
         try {
