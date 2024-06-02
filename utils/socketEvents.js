@@ -18,7 +18,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
             socket.userEmail = userEmail;
             let userId = userEmail;
 
-
+          
 
             usersMap.set(userId, {
                 socket,
@@ -119,7 +119,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 user.pairedSocketId = null;
             }
 
-
+           
             // Update user's information and preferences
             const {
                 userEmail,
@@ -168,46 +168,48 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
     });
 
 
-    socket.on('disconnect', () => {
-        try {
-            if (socket.userEmail && usersMap.has(socket.userEmail)) {
-                const user = usersMap.get(socket.userEmail);
+socket.on('disconnect', () => {
+    try {
+        if (socket.userEmail && usersMap.has(socket.userEmail)) {
+            const user = usersMap.get(socket.userEmail);
 
-                if (user.isPaired && user.room) {
-                    io.to(user.room).emit('pairDisconnected', { pair: socket.userEmail });
-                    socket.leave(user.room);
-                }
-
-                removeUserFromQueue(socket.userEmail, userQueue, usersMap, userRooms);
-                usersMap.delete(socket.userEmail);
-
-                pairingManager.handleUserQueueChange();
+            if (user.isPaired && user.room) {
+                io.to(user.room).emit('pairDisconnected', { pair: socket.userEmail });
+                socket.leave(user.room);
             }
-        } catch (error) {
-            console.error('Error handling disconnect event:', error.message);
+
+            removeUserFromQueue(socket.userEmail, userQueue, usersMap, userRooms);
+            usersMap.delete(socket.userEmail);
+
+            pairingManager.handleUserQueueChange();
         }
-    });
-
-    function removeUserFromQueue(userId, queue, usersMap, userRooms) {
-        try {
-            if (!userId) {
-                return;
-            }
-
-            const index = queue.indexOf(userId);
-            if (index !== -1) {
-                queue.splice(index, 1);
-            }
-
-            const user = usersMap.get(userId);
-
-            if (user && user.room) {
-                const roomId = user.room;
-                userRooms.delete(roomId);
-            }
-        } catch (error) {
-            console.error('Error removing user from queue:', error.message);
-        }
+    } catch (error) {
+        console.error('Error handling disconnect event:', error.message);
     }
+});
 
-    module.exports = handleSocketEvents;
+}
+
+function removeUserFromQueue(userId, queue, usersMap, userRooms) {
+    try {
+        if (!userId) {
+            return;
+        }
+
+        const index = queue.indexOf(userId);
+        if (index !== -1) {
+            queue.splice(index, 1);
+        }
+
+        const user = usersMap.get(userId);
+
+        if (user && user.room) {
+            const roomId = user.room;
+            userRooms.delete(roomId);
+        }
+    } catch (error) {
+        console.error('Error removing user from queue:', error.message);
+    }
+}
+
+module.exports = handleSocketEvents;
