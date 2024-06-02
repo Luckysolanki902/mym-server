@@ -1,4 +1,3 @@
-const { emitRoundedUsersCount } = require('./countingUtils');
 
 function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
 
@@ -19,8 +18,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
             socket.userEmail = userEmail;
             let userId = userEmail;
 
-            emitRoundedUsersCount(io, usersMap.size);
-            console.log(emitRoundedUsersCount(io, usersMap.size));
+          
 
             usersMap.set(userId, {
                 socket,
@@ -85,8 +83,6 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 user.pairedSocketId = null;
             }
 
-            emitRoundedUsersCount(io, usersMap.size);
-            console.log(emitRoundedUsersCount(io, usersMap.size));
             // Update user's information and preferences
             const {
                 userEmail,
@@ -123,8 +119,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 user.pairedSocketId = null;
             }
 
-            emitRoundedUsersCount(io, usersMap.size);
-
+           
             // Update user's information and preferences
             const {
                 userEmail,

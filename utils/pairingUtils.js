@@ -1,4 +1,3 @@
-const { emitRoundedUsersCount } = require('./countingUtils');
 const { v4: uuidv4 } = require('uuid');
 
 function pairUsers(userQueue, usersMap, io, userRooms) {
@@ -67,7 +66,6 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
           stranger: user.userEmail,
         });
 
-        emitRoundedUsersCount(io, usersMap.size);
       } else {
         userQueue.push(userId); // Put the user back in the queue since no match was found
       }
