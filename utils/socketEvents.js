@@ -1,3 +1,18 @@
+require('dotenv').config();
+const CryptoJS = require('crypto-js');
+
+
+const secretKey = process.env.SECRET_KEY;
+
+const encryptMessage = (message, secretKey) => {
+    return CryptoJS.AES.encrypt(message, secretKey).toString();
+};
+
+const decryptMessage = (encryptedMessage, secretKey) => {
+    const bytes = CryptoJS.AES.decrypt(encryptedMessage, secretKey);
+    return bytes.toString(CryptoJS.enc.Utf8);
+};
+
 
 function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
 
@@ -150,12 +165,16 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
             const user = usersMap.get(userEmail);
 
             if (type === 'message' && user && user.room && user.pairedSocketId) {
-                io.to(user.pairedSocketId).emit('message', { type: 'message', sender: userEmail, content });
+                const decryptedMessage = decryptMessage(content, secretKey);
+                const encryptedMessageForReceiver = encryptMessage(decryptedMessage, secretKey);
+                io.to(user.pairedSocketId).emit('message', { type: 'message', sender: userEmail, content: encryptedMessageForReceiver });
             }
         } catch (error) {
             console.error('Error in message event:', error.message);
         }
     });
+
+    
     socket.on('stopFindingPair', () => {
         try {
 
@@ -181,7 +200,6 @@ socket.on('disconnect', () => {
             removeUserFromQueue(socket.userEmail, userQueue, usersMap, userRooms);
             usersMap.delete(socket.userEmail);
 
-            pairingManager.handleUserQueueChange();
         }
     } catch (error) {
         console.error('Error handling disconnect event:', error.message);
