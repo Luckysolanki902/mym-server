@@ -53,13 +53,14 @@ io.on('connection', (socket) => {
   }
 });
 
-// API endpoint to get user statistics
+// API endpoint to get user statistics// API endpoint to get user statistics
 app.get('/api/user-stats', (req, res) => {
   try {
     const getUsersStats = (usersMap) => {
       let totalUsers = 0;
       let maleUsers = 0;
       let femaleUsers = 0;
+      let collegeStats = {};
 
       for (let user of usersMap.values()) {
         totalUsers++;
@@ -68,9 +69,18 @@ app.get('/api/user-stats', (req, res) => {
         } else if (user.userGender === 'female') {
           femaleUsers++;
         }
+
+        // Calculate college-wise statistics
+        if (user.userCollege) {
+          if (!collegeStats[user.userCollege]) {
+            collegeStats[user.userCollege] = 1;
+          } else {
+            collegeStats[user.userCollege]++;
+          }
+        }
       }
 
-      return { totalUsers, maleUsers, femaleUsers };
+      return { totalUsers, maleUsers, femaleUsers, collegeStats };
     };
 
     const textChatStats = getUsersStats(textChatUsers);
@@ -87,6 +97,7 @@ app.get('/api/user-stats', (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
 
 server.listen(1000, () => {
   console.log('Server started on port 1000');
