@@ -8,6 +8,7 @@ const PairingManager = require('./utils/pairingManger');
 const app = express();
 const server = http.createServer(app);
 
+// Enable CORS for all origins
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST'],
@@ -20,17 +21,15 @@ const io = socketIO(server, {
   },
 });
 
-// Things for text chat pageType
+// Create maps and queues for managing different page types
 const textChatUsers = new Map();
 const textChatQueue = [];
 const textChatRooms = new Map();
 
-// Things for audio call pageType
 const audioCallUsers = new Map();
 const audioCallQueue = [];
 const audioCallRooms = new Map();
 
-// Things for video call pageType
 const videoCallUsers = new Map();
 const videoCallQueue = [];
 const videoCallRooms = new Map();
@@ -40,20 +39,37 @@ const textChatPairingManager = new PairingManager(io, textChatQueue, textChatUse
 const audioCallPairingManager = new PairingManager(io, audioCallQueue, audioCallUsers, audioCallRooms);
 const videoCallPairingManager = new PairingManager(io, videoCallQueue, videoCallUsers, videoCallRooms);
 
+// Handle socket connections
 io.on('connection', (socket) => {
   const { pageType } = socket.handshake.query;
-  if (pageType === 'textchat') {
-    handleSocketEvents(io, socket, textChatUsers, textChatQueue, textChatRooms, textChatPairingManager);
-  } else if (pageType === 'audiocall') {
-    handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
-  } else if (pageType === 'videocall') {
-    handleSocketEvents(io, socket, videoCallUsers, videoCallQueue, videoCallRooms, videoCallPairingManager);
-  } else {
-    console.error('Invalid pageType:', pageType);
+
+  if (!pageType) {
+    console.error(`[${new Date().toISOString()}] Invalid connection attempt: missing pageType`);
+    return;
   }
+
+  console.info(`[${new Date().toISOString()}] Socket connected. PageType: ${pageType}, Socket ID: ${socket.id}`);
+
+  try {
+    if (pageType === 'textchat') {
+      handleSocketEvents(io, socket, textChatUsers, textChatQueue, textChatRooms, textChatPairingManager);
+    } else if (pageType === 'audiocall') {
+      handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
+    } else if (pageType === 'videocall') {
+      handleSocketEvents(io, socket, videoCallUsers, videoCallQueue, videoCallRooms, videoCallPairingManager);
+    } else {
+      console.error(`[${new Date().toISOString()}] Invalid pageType: ${pageType}`);
+    }
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error handling socket events: ${error.message}`);
+  }
+
+  socket.on('disconnect', () => {
+    console.info(`[${new Date().toISOString()}] Socket disconnected. Socket ID: ${socket.id}`);
+  });
 });
 
-// API endpoint to get user statistics// API endpoint to get user statistics
+// API endpoint to get user statistics
 app.get('/api/user-stats', (req, res) => {
   try {
     const getUsersStats = (usersMap) => {
@@ -70,13 +86,8 @@ app.get('/api/user-stats', (req, res) => {
           femaleUsers++;
         }
 
-        // Calculate college-wise statistics
         if (user.userCollege) {
-          if (!collegeStats[user.userCollege]) {
-            collegeStats[user.userCollege] = 1;
-          } else {
-            collegeStats[user.userCollege]++;
-          }
+          collegeStats[user.userCollege] = (collegeStats[user.userCollege] || 0) + 1;
         }
       }
 
@@ -93,16 +104,17 @@ app.get('/api/user-stats', (req, res) => {
       videoCallStats,
     });
   } catch (error) {
-    console.error('Error fetching user stats:', error);
+    console.error(`[${new Date().toISOString()}] Error fetching user stats: ${error.message}`);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-
+// Start the server
 server.listen(1000, () => {
-  console.log('Server started on port 1000');
+  console.info(`[${new Date().toISOString()}] Server started on port 1000`);
 });
 
+// Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
-  console.error('Unhandled Promise Rejection:', error);
+  console.error(`[${new Date().toISOString()}] Unhandled Promise Rejection: ${error.message}`);
 });
