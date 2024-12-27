@@ -99,11 +99,13 @@ function pairUsers(userQueue, usersMap, io, userRooms) {
           room,
           strangerGender: matchedUser.userGender,
           stranger: matchedUser.userMID,
+          isStrangerVerified: matchedUser.isVerified,
         });
         matchedUser.socket.emit('pairingSuccess', {
           room,
           strangerGender: user.userGender,
           stranger: user.userMID,
+          isStrangerVerified: user.isVerified,
         });
 
         log('info', `pairUsers: Emitted pairingSuccess to Users ${user.userMID} and ${matchedUser.userMID}.`);

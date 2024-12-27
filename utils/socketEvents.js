@@ -67,6 +67,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 userCollege,
                 preferredGender,
                 preferredCollege,
+                isVerified,
             } = data;
 
             if (!userMID) {
@@ -86,6 +87,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 isPaired: false,
                 room: null,
                 pairedSocketId: null,
+                isVerified,
             });
 
             if (!userQueue.includes(userId)) {
@@ -170,12 +172,14 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 userCollege,
                 preferredGender,
                 preferredCollege,
+                isVerified,
             } = data;
             user.userMID = userMID;
             user.userGender = userGender;
             user.userCollege = userCollege;
             user.preferredGender = preferredGender;
             user.preferredCollege = preferredCollege;
+            user.isVerified = isVerified;
 
             // Push the user back into the queue for pairing
             userQueue.push(userMID);
@@ -213,12 +217,14 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 userCollege,
                 preferredGender,
                 preferredCollege,
+                isVerified,
             } = data;
             user.userMID = userMID;
             user.userGender = userGender;
             user.userCollege = userCollege;
             user.preferredGender = preferredGender;
             user.preferredCollege = preferredCollege;
+            user.isVerified = isVerified;
 
             // Push the user back into the queue for pairing
             userQueue.push(userMID);
