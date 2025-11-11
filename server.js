@@ -4,6 +4,8 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const handleSocketEvents = require('./utils/socketEvents');
 const PairingManager = require('./utils/pairingManger');
+const EnhancedPairingManager = require('./utils/EnhancedPairingManager');
+const PairingLogger = require('./utils/PairingLogger');
 
 const app = express();
 const server = http.createServer(app);
@@ -34,21 +36,27 @@ const videoCallUsers = new Map();
 const videoCallQueue = [];
 const videoCallRooms = new Map();
 
-// Create pairing managers for different page types
-const textChatPairingManager = new PairingManager(io, textChatQueue, textChatUsers, textChatRooms);
-const audioCallPairingManager = new PairingManager(io, audioCallQueue, audioCallUsers, audioCallRooms);
-const videoCallPairingManager = new PairingManager(io, videoCallQueue, videoCallUsers, videoCallRooms);
+// Create ENHANCED pairing managers for different page types
+const textChatPairingManager = new EnhancedPairingManager(io, textChatUsers, textChatRooms, 'textchat');
+const audioCallPairingManager = new EnhancedPairingManager(io, audioCallUsers, audioCallRooms, 'audiocall');
+const videoCallPairingManager = new EnhancedPairingManager(io, videoCallUsers, videoCallRooms, 'videocall');
+
+PairingLogger.pairing('All pairing managers initialized', {
+  textChat: 'ready',
+  audioCall: 'ready',
+  videoCall: 'ready'
+});
 
 // Handle socket connections
 io.on('connection', (socket) => {
   const { pageType } = socket.handshake.query;
 
   if (!pageType) {
-    console.error(`[${new Date().toISOString()}] Invalid connection attempt: missing pageType`);
+    PairingLogger.error('Invalid connection attempt: missing pageType', { socketId: socket.id });
     return;
   }
 
-  console.info(`[${new Date().toISOString()}] Socket connected. PageType: ${pageType}, Socket ID: ${socket.id}`);
+  PairingLogger.socket('Socket connected', { pageType, socketId: socket.id });
 
   try {
     if (pageType === 'textchat') {
@@ -58,14 +66,14 @@ io.on('connection', (socket) => {
     } else if (pageType === 'videocall') {
       handleSocketEvents(io, socket, videoCallUsers, videoCallQueue, videoCallRooms, videoCallPairingManager);
     } else {
-      console.error(`[${new Date().toISOString()}] Invalid pageType: ${pageType}`);
+      PairingLogger.error('Invalid pageType', { pageType, socketId: socket.id });
     }
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Error handling socket events: ${error.message}`);
+    PairingLogger.error('Error handling socket events', error);
   }
 
   socket.on('disconnect', () => {
-    console.info(`[${new Date().toISOString()}] Socket disconnected. Socket ID: ${socket.id}`);
+    PairingLogger.socket('Socket disconnected', { socketId: socket.id });
   });
 });
 
@@ -111,10 +119,22 @@ app.get('/api/user-stats', (req, res) => {
 
 // Start the server
 server.listen(1000, () => {
-  console.info(`[${new Date().toISOString()}] Server started on port 1000`);
+  PairingLogger.pairing('Server started on port 1000', { 
+    port: 1000,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error) => {
-  console.error(`[${new Date().toISOString()}] Unhandled Promise Rejection: ${error.message}`);
+  PairingLogger.error('Unhandled Promise Rejection', error);
 });
+
+// Log metrics every 30 seconds
+setInterval(() => {
+  PairingLogger.metrics('Server metrics', {
+    textChat: textChatPairingManager.getMetrics(),
+    audioCall: audioCallPairingManager.getMetrics(),
+    videoCall: videoCallPairingManager.getMetrics()
+  });
+}, 30000);

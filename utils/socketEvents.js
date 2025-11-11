@@ -1,5 +1,6 @@
 require('dotenv').config();
 const CryptoJS = require('crypto-js');
+const PairingLogger = require('./PairingLogger');
 
 const secretKey = process.env.SECRET_KEY;
 
@@ -29,32 +30,11 @@ const decryptMessage = (encryptedMessage, secretKey) => {
  * @param {object} io - The Socket.IO server instance.
  * @param {object} socket - The individual socket connection.
  * @param {Map} usersMap - A map of user IDs to user data.
- * @param {Array} userQueue - The queue of users waiting to be paired.
+ * @param {Array} userQueue - The queue of users waiting to be paired (legacy, not used with EnhancedPairingManager).
  * @param {Map} userRooms - A map of room IDs to room data.
+ * @param {EnhancedPairingManager} pairingManager - The enhanced pairing manager instance.
  */
-function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
-    /**
-     * Helper function to add timestamps to logs.
-     * @param {string} level - The log level (info, warn, error).
-     * @param {string} message - The log message.
-     */
-    const log = (level, message) => {
-        const timestamp = new Date().toISOString();
-        switch (level) {
-            case 'info':
-                console.info(`[${timestamp}] INFO: ${message}`);
-                break;
-            case 'warn':
-                console.warn(`[${timestamp}] WARN: ${message}`);
-                break;
-            case 'error':
-                console.error(`[${timestamp}] ERROR: ${message}`);
-                break;
-            default:
-                console.log(`[${timestamp}] ${message}`);
-        }
-    };
-
+function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingManager) {
     /**
      * Event: identify
      * Registers a user with their details.
@@ -74,8 +54,34 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 throw new Error('Invalid user identification data: Missing userMID.');
             }
 
+            // Validate socket is actually connected
+            if (!socket || !socket.connected) {
+                PairingLogger.error('Identify failed - socket not connected', { 
+                    userMID, 
+                    hasSocket: !!socket,
+                    connected: socket?.connected 
+                });
+                return;
+            }
+
+            PairingLogger.socket('User identifying', { userMID, userGender, userCollege, preferredGender, preferredCollege, isVerified, socketId: socket.id });
+
             socket.userMID = userMID;
             const userId = userMID;
+
+            // Check if user already exists with a different socket
+            const existingUser = usersMap.get(userId);
+            if (existingUser && existingUser.socket.id !== socket.id) {
+                PairingLogger.warning('User already connected with different socket, disconnecting old socket', { 
+                    userMID, 
+                    oldSocketId: existingUser.socket.id, 
+                    newSocketId: socket.id 
+                });
+                // Disconnect the old socket
+                existingUser.socket.disconnect(true);
+                // Remove from pairing queue
+                pairingManager.removeFromQueue(userId);
+            }
 
             usersMap.set(userId, {
                 socket,
@@ -88,18 +94,23 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 room: null,
                 pairedSocketId: null,
                 isVerified,
+                state: 'WAITING'
             });
 
-            if (!userQueue.includes(userId)) {
-                userQueue.push(userId);
-                log('info', `User added to queue: ${userMID}`);
-            } else {
-                log('warn', `User ${userMID} is already in the queue.`);
-            }
+            // Add to enhanced pairing queue
+            pairingManager.addToQueue(userId, {
+                userGender,
+                userCollege,
+                preferredGender,
+                preferredCollege,
+                isVerified,
+            });
 
-            log('info', `User identified: ${userMID}`);
+            PairingLogger.queue('User added to queue', { userMID, queueStats: pairingManager.queue.getStats() });
+
+            PairingLogger.socket('User identified successfully', { userMID, socketId: socket.id });
         } catch (error) {
-            log('error', `Identify event error: ${error.message}`);
+            PairingLogger.error('Identify event error', { error: error.message, stack: error.stack });
         }
     });
 
@@ -114,12 +125,12 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
 
             if (user && user.room && user.pairedSocketId) {
                 io.to(user.pairedSocketId).emit('userTyping', userMID);
-                log('info', `UserTyping event emitted from ${userMID} to ${user.pairedSocketId}`);
+                PairingLogger.socket('UserTyping event', { from: userMID, to: user.pairedSocketId, room: user.room });
             } else {
-                log('warn', `UserTyping event: User or pairing information missing for ${userMID}`);
+                PairingLogger.socket('UserTyping event failed - user not paired', { userMID, hasPairing: !!user?.pairedSocketId });
             }
         } catch (error) {
-            log('error', `UserTyping event error: ${error.message}`);
+            PairingLogger.error('UserTyping event error', { error: error.message, stack: error.stack });
         }
     });
 
@@ -134,12 +145,12 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
 
             if (user && user.room && user.pairedSocketId) {
                 io.to(user.pairedSocketId).emit('userStoppedTyping', userMID);
-                log('info', `UserStoppedTyping event emitted from ${userMID} to ${user.pairedSocketId}`);
+                PairingLogger.socket('UserStoppedTyping event', { from: userMID, to: user.pairedSocketId, room: user.room });
             } else {
-                log('warn', `UserStoppedTyping event: User or pairing information missing for ${userMID}`);
+                PairingLogger.socket('UserStoppedTyping event failed - user not paired', { userMID, hasPairing: !!user?.pairedSocketId });
             }
         } catch (error) {
-            log('error', `UserStoppedTyping event error: ${error.message}`);
+            PairingLogger.error('UserStoppedTyping event error', { error: error.message, stack: error.stack });
         }
     });
 
@@ -149,21 +160,72 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
      */
     socket.on('findNewPair', (data) => {
         try {
-            const user = usersMap.get(socket.userMID);
-            if (!user) {
-                log('warn', `findNewPair event: User not found for socket ID ${socket.id}`);
+            // Validate socket connection first
+            if (!socket || !socket.connected) {
+                PairingLogger.error('findNewPair failed - socket not connected', { 
+                    socketId: socket?.id,
+                    hasSocket: !!socket,
+                    connected: socket?.connected 
+                });
                 return;
             }
 
+            const user = usersMap.get(socket.userMID);
+            if (!user) {
+                PairingLogger.socket('findNewPair event failed - user not found', { socketId: socket.id, userMID: socket.userMID });
+                return;
+            }
+
+            // Validate user socket matches current socket
+            if (user.socket.id !== socket.id) {
+                PairingLogger.warning('findNewPair - socket ID mismatch, updating', {
+                    userMID: socket.userMID,
+                    oldSocketId: user.socket.id,
+                    newSocketId: socket.id
+                });
+                user.socket = socket;
+            }
+
+            PairingLogger.socket('findNewPair event received', { 
+                socketId: socket.id, 
+                userMID: socket.userMID,
+                currentState: { isPaired: user.isPaired, inRoom: user.room, state: user.state }
+            });
+
+            // Disconnect from current pair if exists
             if (user.isPaired && user.room && user.pairedSocketId) {
                 io.to(user.pairedSocketId).emit('pairDisconnected', { pair: socket.userMID });
                 socket.leave(user.room);
-                log('info', `Pair disconnected for user ${socket.userMID} from room ${user.room}`);
+                
+                // Update partner's state
+                for (const [partnerMID, partnerUser] of usersMap.entries()) {
+                    if (partnerUser.socket.id === user.pairedSocketId) {
+                        partnerUser.isPaired = false;
+                        partnerUser.room = null;
+                        partnerUser.pairedSocketId = null;
+                        partnerUser.state = 'DISCONNECTED';
+                        PairingLogger.socket('Partner state updated on findNewPair', { 
+                            requester: socket.userMID, 
+                            partner: partnerMID 
+                        });
+                        break;
+                    }
+                }
+                
+                PairingLogger.pairing('User requesting new pair - disconnecting from current pair', { 
+                    userMID: socket.userMID, 
+                    previousRoom: user.room, 
+                    previousPair: user.pairedSocketId 
+                });
 
                 user.isPaired = false;
                 user.room = null;
                 user.pairedSocketId = null;
             }
+
+            // Remove from queue if already in queue (prevent duplicates)
+            pairingManager.removeFromQueue(socket.userMID);
+            PairingLogger.queue('User removed from queue before re-adding', { userMID: socket.userMID });
 
             // Update user's information and preferences
             const {
@@ -180,12 +242,20 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
             user.preferredGender = preferredGender;
             user.preferredCollege = preferredCollege;
             user.isVerified = isVerified;
+            user.state = 'WAITING'; // Explicitly set to WAITING state
 
-            // Push the user back into the queue for pairing
-            userQueue.push(userMID);
-            log('info', `User ${userMID} re-added to queue for new pairing.`);
+            // Add user back to enhanced pairing queue
+            pairingManager.addToQueue(userMID, {
+                userGender,
+                userCollege,
+                preferredGender,
+                preferredCollege,
+                isVerified,
+            });
+            
+            PairingLogger.queue('User re-added to queue for new pairing', { userMID, queueStats: pairingManager.queue.getStats() });
         } catch (error) {
-            log('error', `FindNewPair event error: ${error.message}`);
+            PairingLogger.error('FindNewPair event error', { error: error.message, stack: error.stack });
         }
     });
 
@@ -195,20 +265,58 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
      */
     socket.on('findNewPairWhenSomeoneLeft', (data) => {
         try {
-            const user = usersMap.get(socket.userMID);
-            if (!user) {
-                log('warn', `findNewPairWhenSomeoneLeft event: User not found for socket ID ${socket.id}`);
+            // Validate socket connection first
+            if (!socket || !socket.connected) {
+                PairingLogger.error('findNewPairWhenSomeoneLeft failed - socket not connected', { 
+                    socketId: socket?.id,
+                    hasSocket: !!socket,
+                    connected: socket?.connected 
+                });
                 return;
             }
 
-            if (user.isPaired && user.room && user.pairedSocketId) {
-                socket.leave(user.room);
-                log('info', `User ${socket.userMID} left room ${user.room} due to pair disconnection.`);
+            const user = usersMap.get(socket.userMID);
+            if (!user) {
+                PairingLogger.socket('findNewPairWhenSomeoneLeft event failed - user not found', { socketId: socket.id, userMID: socket.userMID });
+                return;
+            }
+
+            // Validate user socket matches current socket
+            if (user.socket.id !== socket.id) {
+                PairingLogger.warning('findNewPairWhenSomeoneLeft - socket ID mismatch, updating', {
+                    userMID: socket.userMID,
+                    oldSocketId: user.socket.id,
+                    newSocketId: socket.id
+                });
+                user.socket = socket;
+            }
+
+            PairingLogger.socket('findNewPairWhenSomeoneLeft event received', { 
+                socketId: socket.id, 
+                userMID: socket.userMID,
+                currentState: { isPaired: user.isPaired, inRoom: user.room, state: user.state }
+            });
+
+            // Clean up room state - whether DISCONNECTED or still CHATTING
+            if (user.room || user.pairedSocketId) {
+                if (user.room) {
+                    socket.leave(user.room);
+                }
+                PairingLogger.pairing('User finding new pair after partner left', { 
+                    userMID: socket.userMID, 
+                    previousRoom: user.room, 
+                    previousPair: user.pairedSocketId,
+                    previousState: user.state
+                });
 
                 user.isPaired = false;
                 user.room = null;
                 user.pairedSocketId = null;
             }
+
+            // Remove from queue if already in queue (prevent duplicates)
+            pairingManager.removeFromQueue(socket.userMID);
+            PairingLogger.queue('User removed from queue before re-adding', { userMID: socket.userMID });
 
             // Update user's information and preferences
             const {
@@ -225,12 +333,20 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
             user.preferredGender = preferredGender;
             user.preferredCollege = preferredCollege;
             user.isVerified = isVerified;
+            user.state = 'WAITING'; // Explicitly set to WAITING state
 
-            // Push the user back into the queue for pairing
-            userQueue.push(userMID);
-            log('info', `User ${userMID} re-added to queue after pair left.`);
+            // Add user back to enhanced pairing queue
+            pairingManager.addToQueue(userMID, {
+                userGender,
+                userCollege,
+                preferredGender,
+                preferredCollege,
+                isVerified,
+            });
+            
+            PairingLogger.queue('User re-added to queue after pair left', { userMID, queueStats: pairingManager.queue.getStats() });
         } catch (error) {
-            log('error', `FindNewPairWhenSomeoneLeft event error: ${error.message}`);
+            PairingLogger.error('FindNewPairWhenSomeoneLeft event error', { error: error.message, stack: error.stack });
         }
     });
 
@@ -251,12 +367,12 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                     sender: userMID,
                     content: encryptedMessageForReceiver
                 });
-                log('info', `Message from ${userMID} forwarded to ${user.pairedSocketId}`);
+                PairingLogger.socket('Message forwarded', { from: userMID, to: user.pairedSocketId, room: user.room });
             } else {
-                log('warn', `Message event: Invalid user or pairing information for ${userMID}`);
+                PairingLogger.socket('Message event failed - invalid pairing', { userMID, hasPairing: !!user?.pairedSocketId });
             }
         } catch (error) {
-            log('error', `Message event error: ${error.message}`);
+            PairingLogger.error('Message event error', { error: error.message, stack: error.stack });
         }
     });
 
@@ -267,10 +383,79 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
     socket.on('stopFindingPair', () => {
         try {
             const userId = socket.userMID;
-            removeUserFromQueue(userId, userQueue, usersMap, userRooms);
-            log('info', `User ${userId} stopped searching for a pair.`);
+            pairingManager.removeFromQueue(userId);
+            PairingLogger.queue('User stopped searching for pair', { userMID: userId, queueStats: pairingManager.queue.getStats() });
         } catch (error) {
-            log('error', `StopFindingPair event error: ${error.message}`);
+            PairingLogger.error('StopFindingPair event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
+     * Event: updateFilters
+     * Allows a user to update their filter preferences while in queue
+     */
+    socket.on('updateFilters', (data) => {
+        try {
+            const { userMID, preferredGender, preferredCollege } = data;
+            
+            PairingLogger.socket('Filter update request received', {
+                userMID,
+                socketId: socket.id,
+                newFilters: { preferredGender, preferredCollege },
+                queueContainsUser: pairingManager.queue.contains(userMID),
+                queueSize: pairingManager.queue.size(),
+                userInMap: usersMap.has(userMID)
+            });
+
+            // Validate filters
+            const validGenders = ['male', 'female', 'any'];
+            if (!validGenders.includes(preferredGender)) {
+                socket.emit('filtersUpdateFailed', {
+                    success: false,
+                    message: 'Invalid preferred gender'
+                });
+                return;
+            }
+
+            // Update filters in queue
+            const result = pairingManager.updateFiltersInQueue(userMID, {
+                preferredGender,
+                preferredCollege
+            });
+
+            if (result.success) {
+                // Emit success event back to user
+                socket.emit('filtersUpdated', {
+                    success: true,
+                    message: 'Filters updated successfully',
+                    position: result.data.position,
+                    waitTime: result.data.waitTime,
+                    newFilters: result.data.newFilters
+                });
+
+                PairingLogger.success('Filters updated successfully', {
+                    userMID,
+                    position: result.data.position,
+                    newFilters: result.data.newFilters
+                });
+            } else {
+                // Emit failure event
+                socket.emit('filtersUpdateFailed', {
+                    success: false,
+                    message: result.message
+                });
+
+                PairingLogger.warning('Failed to update filters', {
+                    userMID,
+                    reason: result.message
+                });
+            }
+        } catch (error) {
+            PairingLogger.error('UpdateFilters event error', { error: error.message, stack: error.stack });
+            socket.emit('filtersUpdateFailed', {
+                success: false,
+                message: 'Server error updating filters'
+            });
         }
     });
 
@@ -284,55 +469,56 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms) {
                 const user = usersMap.get(socket.userMID);
 
                 if (user.isPaired && user.room) {
+                    // Notify the paired user
                     io.to(user.room).emit('pairDisconnected', { pair: socket.userMID });
                     socket.leave(user.room);
-                    log('info', `User ${socket.userMID} disconnected and left room ${user.room}`);
+                    
+                    // CRITICAL FIX: Update the partner's state so they can't be paired again
+                    // until they explicitly click Find New
+                    if (user.pairedSocketId) {
+                        // Find the partner by socket ID
+                        for (const [partnerMID, partnerUser] of usersMap.entries()) {
+                            if (partnerUser.socket.id === user.pairedSocketId) {
+                                // Reset partner's pairing state
+                                partnerUser.isPaired = false;
+                                partnerUser.room = null;
+                                partnerUser.pairedSocketId = null;
+                                partnerUser.state = 'DISCONNECTED'; // Mark as disconnected, not WAITING
+                                
+                                // Remove partner from queue if they somehow ended up there
+                                pairingManager.removeFromQueue(partnerMID);
+                                
+                                PairingLogger.socket('Partner state reset after disconnect', {
+                                    disconnectedUser: socket.userMID,
+                                    partner: partnerMID,
+                                    partnerNewState: 'DISCONNECTED'
+                                });
+                                break;
+                            }
+                        }
+                    }
+                    
+                    PairingLogger.socket('User disconnected from active pair', { 
+                        userMID: socket.userMID, 
+                        room: user.room, 
+                        pairedWith: user.pairedSocketId 
+                    });
                 }
 
-                removeUserFromQueue(socket.userMID, userQueue, usersMap, userRooms);
+                // Remove from enhanced pairing queue
+                pairingManager.removeFromQueue(socket.userMID);
                 usersMap.delete(socket.userMID);
-                log('info', `User ${socket.userMID} removed from usersMap upon disconnect.`);
+                PairingLogger.socket('User removed from system on disconnect', { 
+                    userMID: socket.userMID, 
+                    queueStats: pairingManager.queue.getStats() 
+                });
             } else {
-                log('warn', `Disconnect event: No userMID found for socket ID ${socket.id}`);
+                PairingLogger.socket('Disconnect event - no userMID found', { socketId: socket.id });
             }
         } catch (error) {
-            log('error', `Disconnect event error: ${error.message}`);
+            PairingLogger.error('Disconnect event error', { error: error.message, stack: error.stack, socketId: socket.id });
         }
     });
-}
-
-/**
- * Removes a user from the queue and cleans up their room if necessary.
- * @param {string} userId - The ID of the user to remove.
- * @param {Array} queue - The queue from which to remove the user.
- * @param {Map} usersMap - The map of users.
- * @param {Map} userRooms - The map of rooms.
- */
-function removeUserFromQueue(userId, queue, usersMap, userRooms) {
-    try {
-        if (!userId) {
-            console.warn('removeUserFromQueue: Invalid userId.');
-            return;
-        }
-
-        const index = queue.indexOf(userId);
-        if (index !== -1) {
-            queue.splice(index, 1);
-            console.info(`removeUserFromQueue: User ${userId} removed from queue.`);
-        } else {
-            console.warn(`removeUserFromQueue: User ${userId} not found in queue.`);
-        }
-
-        const user = usersMap.get(userId);
-
-        if (user && user.room) {
-            const roomId = user.room;
-            userRooms.delete(roomId);
-            console.info(`removeUserFromQueue: Room ${roomId} deleted for user ${userId}.`);
-        }
-    } catch (error) {
-        console.error(`removeUserFromQueue error: ${error.message}`);
-    }
 }
 
 module.exports = handleSocketEvents;
