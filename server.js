@@ -2,13 +2,33 @@ const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
-const handleSocketEvents = require('./utils/socketEvents');
+const { ExpressPeerServer } = require('peer');
+const handleTextChatEvents = require('./utils/socketEvents');
+const handleAudioCallEvents = require('./utils/audioCallEvents');
 const PairingManager = require('./utils/pairingManger');
 const EnhancedPairingManager = require('./utils/EnhancedPairingManager');
 const PairingLogger = require('./utils/PairingLogger');
 
 const app = express();
 const server = http.createServer(app);
+
+const peerServer = ExpressPeerServer(server, {
+  path: '/peerjs',
+  proxied: true,
+  debug: process.env.NODE_ENV !== 'production',
+});
+
+app.use('/peerjs', peerServer);
+
+peerServer.on('connection', (client) => {
+  const clientId = typeof client.getId === 'function' ? client.getId() : client.id || client;
+  PairingLogger.socket('PeerJS client connected', { clientId });
+});
+
+peerServer.on('disconnect', (client) => {
+  const clientId = typeof client.getId === 'function' ? client.getId() : client.id || client;
+  PairingLogger.socket('PeerJS client disconnected', { clientId });
+});
 
 // Enable CORS for all origins
 app.use(cors({
@@ -60,9 +80,9 @@ io.on('connection', (socket) => {
 
   try {
     if (pageType === 'textchat') {
-      handleSocketEvents(io, socket, textChatUsers, textChatQueue, textChatRooms, textChatPairingManager);
+      handleTextChatEvents(io, socket, textChatUsers, textChatQueue, textChatRooms, textChatPairingManager);
     } else if (pageType === 'audiocall') {
-      handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
+      handleAudioCallEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
     } else if (pageType === 'videocall') {
       handleSocketEvents(io, socket, videoCallUsers, videoCallQueue, videoCallRooms, videoCallPairingManager);
     } else {

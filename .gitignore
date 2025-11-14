@@ -3,3 +3,8 @@
 .env*
 .env*.local
 
+# Yarn unplugged artifacts are generated locally per-machine
+.yarn/unplugged/
+.pnp.cjs
+.pnp.loader.mjs
+

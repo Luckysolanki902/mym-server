@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const PairingLogger = require('./PairingLogger');
 const PairingQueue = require('./PairingQueue');
 const AtomicLock = require('./atomicLock');
+const { AUDIO_CALL_ICE_CONFIG, AUDIO_CALL_STUN_SERVERS } = require('./audioCallConfig');
 const { calculateFilterLevel, findBestMatch, getFilterDescription } = require('./matchingAlgorithm');
 
 /**
@@ -113,14 +114,15 @@ class EnhancedPairingManager {
 
     // Send queue acknowledgment immediately
     const queueEntry = this.queue.getEntry(userMID);
+    const position = this.queue.getPosition(userMID);
     if (queueEntry && user.socket && user.socket.connected) {
       user.socket.emit('queueJoined', {
         success: true,
-        position: queueEntry.position,
+        position,
         queueSize: this.queue.size(),
         message: 'Successfully added to queue'
       });
-      PairingLogger.socket('Queue acknowledgment sent', { userMID, position: queueEntry.position });
+      PairingLogger.socket('Queue acknowledgment sent', { userMID, position });
     }
 
     return {
@@ -200,7 +202,7 @@ class EnhancedPairingManager {
 
         // Validate socket connection before processing
         if (!user.socket || !user.socket.connected) {
-          PairingLogger.warning('User socket disconnected during queue processing, removing', {
+          PairingLogger.warn('User socket disconnected during queue processing, removing', {
             userMID: user.userMID,
             hasSocket: !!user.socket,
             connected: user.socket?.connected
@@ -354,6 +356,11 @@ class EnhancedPairingManager {
     user1.state = 'CHATTING';
     user1.matchScore = matchInfo.score;
     user1.preferencesMet = matchInfo.filterLevel === 1;
+    if (this.pageType === 'audiocall') {
+      user1.callStatus = 'WAITING_FOR_PEER';
+      user1.callStartedAt = null;
+      user1.callEndedAt = null;
+    }
 
     user2.isPaired = true;
     user2.room = roomId;
@@ -361,6 +368,11 @@ class EnhancedPairingManager {
     user2.state = 'CHATTING';
     user2.matchScore = matchInfo.score;
     user2.preferencesMet = matchInfo.filterLevel === 1;
+    if (this.pageType === 'audiocall') {
+      user2.callStatus = 'WAITING_FOR_PEER';
+      user2.callStartedAt = null;
+      user2.callEndedAt = null;
+    }
 
     // Remove from queue
     this.queue.remove(user1.userMID);
@@ -407,6 +419,25 @@ class EnhancedPairingManager {
       waitTime: Math.floor(user2WaitTime / 1000)
     };
 
+    if (this.pageType === 'audiocall') {
+      const user1IsInitiator = user1.userMID < user2.userMID;
+      pairingData1.callContext = {
+        role: user1IsInitiator ? 'initiator' : 'receiver',
+        callStatus: 'WAITING_FOR_PEER',
+        peerServerPath: '/peerjs',
+        iceConfig: AUDIO_CALL_ICE_CONFIG,
+        stunServers: AUDIO_CALL_STUN_SERVERS
+      };
+
+      pairingData2.callContext = {
+        role: user1IsInitiator ? 'receiver' : 'initiator',
+        callStatus: 'WAITING_FOR_PEER',
+        peerServerPath: '/peerjs',
+        iceConfig: AUDIO_CALL_ICE_CONFIG,
+        stunServers: AUDIO_CALL_STUN_SERVERS
+      };
+    }
+
     // Emit with retry logic for race conditions
     const emitWithRetry = (user, data, userLabel) => {
       if (user.socket && user.socket.connected) {
@@ -417,7 +448,7 @@ class EnhancedPairingManager {
           roomId 
         });
       } else {
-        PairingLogger.warning(`${userLabel} socket not ready, retrying...`, { 
+  PairingLogger.warn(`${userLabel} socket not ready, retrying...`, { 
           userMID: user.userMID,
           hasSocket: !!user.socket,
           connected: user.socket?.connected 

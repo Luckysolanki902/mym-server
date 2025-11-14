@@ -72,7 +72,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
             // Check if user already exists with a different socket
             const existingUser = usersMap.get(userId);
             if (existingUser && existingUser.socket.id !== socket.id) {
-                PairingLogger.warning('User already connected with different socket, disconnecting old socket', { 
+                PairingLogger.warn('User already connected with different socket, disconnecting old socket', { 
                     userMID, 
                     oldSocketId: existingUser.socket.id, 
                     newSocketId: socket.id 
@@ -178,7 +178,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
 
             // Validate user socket matches current socket
             if (user.socket.id !== socket.id) {
-                PairingLogger.warning('findNewPair - socket ID mismatch, updating', {
+                PairingLogger.warn('findNewPair - socket ID mismatch, updating', {
                     userMID: socket.userMID,
                     oldSocketId: user.socket.id,
                     newSocketId: socket.id
@@ -283,7 +283,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
 
             // Validate user socket matches current socket
             if (user.socket.id !== socket.id) {
-                PairingLogger.warning('findNewPairWhenSomeoneLeft - socket ID mismatch, updating', {
+                PairingLogger.warn('findNewPairWhenSomeoneLeft - socket ID mismatch, updating', {
                     userMID: socket.userMID,
                     oldSocketId: user.socket.id,
                     newSocketId: socket.id
@@ -445,7 +445,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                     message: result.message
                 });
 
-                PairingLogger.warning('Failed to update filters', {
+                PairingLogger.warn('Failed to update filters', {
                     userMID,
                     reason: result.message
                 });
