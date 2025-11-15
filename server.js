@@ -2,10 +2,14 @@ const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
+const { ExpressPeerServer } = require('peer');
 const handleSocketEvents = require('./utils/socketEvents');
 const PairingManager = require('./utils/pairingManger');
 const EnhancedPairingManager = require('./utils/EnhancedPairingManager');
 const PairingLogger = require('./utils/PairingLogger');
+const handleAudioCallEvents = require('./utils/audioCall/handlers');
+const { getRTCConfig, getPeerServerConfig } = require('./utils/audioCall/constants');
+const audioCallMetrics = require('./utils/audioCall/metrics');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +27,45 @@ const io = socketIO(server, {
   },
 });
 
+const peerServer = ExpressPeerServer(server, {
+  path: '/peerjs',
+  allow_discovery: true
+});
+
+app.use('/peerjs', (req, _res, next) => {
+  PairingLogger.peer('PeerJS HTTP request', {
+    method: req.method,
+    url: req.originalUrl,
+    origin: req.headers.origin,
+    ip: req.ip,
+  });
+  next();
+}, peerServer);
+
+peerServer.on('connection', (client) => {
+  const peerId = client?.getId?.() || client?.id || 'unknown';
+  const token = client?.getToken?.() || client?.token;
+  const remoteAddress = client?._socket?.remoteAddress || client?.socket?.remoteAddress;
+  PairingLogger.peer('PeerJS client connected', {
+    peerId,
+    token,
+    remoteAddress,
+  });
+});
+
+peerServer.on('disconnect', (client) => {
+  const peerId = client?.getId?.() || client?.id || 'unknown';
+  PairingLogger.peer('PeerJS client disconnected', { peerId });
+});
+
+peerServer.on('error', (error) => {
+  PairingLogger.error('PeerJS server error', {
+    code: error?.code,
+    message: error?.message,
+    stack: error?.stack,
+  });
+});
+
 // Create maps and queues for managing different page types
 const textChatUsers = new Map();
 const textChatQueue = [];
@@ -38,7 +81,10 @@ const videoCallRooms = new Map();
 
 // Create ENHANCED pairing managers for different page types
 const textChatPairingManager = new EnhancedPairingManager(io, textChatUsers, textChatRooms, 'textchat');
-const audioCallPairingManager = new EnhancedPairingManager(io, audioCallUsers, audioCallRooms, 'audiocall');
+const audioCallPairingManager = new EnhancedPairingManager(io, audioCallUsers, audioCallRooms, 'audiocall', {
+  rtcConfig: getRTCConfig(),
+  peerServer: getPeerServerConfig()
+});
 const videoCallPairingManager = new EnhancedPairingManager(io, videoCallUsers, videoCallRooms, 'videocall');
 
 PairingLogger.pairing('All pairing managers initialized', {
@@ -62,7 +108,8 @@ io.on('connection', (socket) => {
     if (pageType === 'textchat') {
       handleSocketEvents(io, socket, textChatUsers, textChatQueue, textChatRooms, textChatPairingManager);
     } else if (pageType === 'audiocall') {
-      handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
+  handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
+  handleAudioCallEvents(io, socket, audioCallUsers, audioCallRooms);
     } else if (pageType === 'videocall') {
       handleSocketEvents(io, socket, videoCallUsers, videoCallQueue, videoCallRooms, videoCallPairingManager);
     } else {
@@ -117,10 +164,20 @@ app.get('/api/user-stats', (req, res) => {
   }
 });
 
+app.get('/api/audiocall/stats', (req, res) => {
+  try {
+    res.json(audioCallMetrics.getStats());
+  } catch (error) {
+    PairingLogger.error('Failed to fetch audio call stats', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // Start the server
-server.listen(1000, () => {
-  PairingLogger.pairing('Server started on port 1000', { 
-    port: 1000,
+const serverPort = process.env.PORT || 1000;
+server.listen(serverPort, () => {
+  PairingLogger.pairing(`Server started on port ${serverPort}`, { 
+    port: serverPort,
     timestamp: new Date().toISOString()
   });
 });

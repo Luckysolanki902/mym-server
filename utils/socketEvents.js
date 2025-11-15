@@ -1,6 +1,7 @@
 require('dotenv').config();
 const CryptoJS = require('crypto-js');
 const PairingLogger = require('./PairingLogger');
+const { MIC_STATUS: AUDIO_MIC_STATUS } = require('./audioCall/state');
 
 const secretKey = process.env.SECRET_KEY;
 
@@ -64,7 +65,17 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 return;
             }
 
-            PairingLogger.socket('User identifying', { userMID, userGender, userCollege, preferredGender, preferredCollege, isVerified, socketId: socket.id });
+            PairingLogger.socket('User identifying', {
+                userMID,
+                userGender,
+                userCollege,
+                preferredGender,
+                preferredCollege,
+                isVerified,
+                micStatus: data.micStatus,
+                pageType: data.pageType,
+                socketId: socket.id
+            });
 
             socket.userMID = userMID;
             const userId = userMID;
@@ -72,7 +83,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
             // Check if user already exists with a different socket
             const existingUser = usersMap.get(userId);
             if (existingUser && existingUser.socket.id !== socket.id) {
-                PairingLogger.warning('User already connected with different socket, disconnecting old socket', { 
+                PairingLogger.warn('User already connected with different socket, disconnecting old socket', { 
                     userMID, 
                     oldSocketId: existingUser.socket.id, 
                     newSocketId: socket.id 
@@ -94,7 +105,11 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 room: null,
                 pairedSocketId: null,
                 isVerified,
-                state: 'WAITING'
+                state: 'WAITING',
+                callState: 'IDLE',
+                micStatus: AUDIO_MIC_STATUS.UNKNOWN,
+                peerId: null,
+                lastHeartbeat: Date.now()
             });
 
             // Add to enhanced pairing queue
@@ -178,7 +193,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
 
             // Validate user socket matches current socket
             if (user.socket.id !== socket.id) {
-                PairingLogger.warning('findNewPair - socket ID mismatch, updating', {
+                PairingLogger.warn('findNewPair - socket ID mismatch, updating', {
                     userMID: socket.userMID,
                     oldSocketId: user.socket.id,
                     newSocketId: socket.id
@@ -243,6 +258,9 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
             user.preferredCollege = preferredCollege;
             user.isVerified = isVerified;
             user.state = 'WAITING'; // Explicitly set to WAITING state
+            user.callState = 'IDLE';
+            user.micStatus = user.micStatus || AUDIO_MIC_STATUS.UNKNOWN;
+            user.peerId = null;
 
             // Add user back to enhanced pairing queue
             pairingManager.addToQueue(userMID, {
@@ -283,7 +301,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
 
             // Validate user socket matches current socket
             if (user.socket.id !== socket.id) {
-                PairingLogger.warning('findNewPairWhenSomeoneLeft - socket ID mismatch, updating', {
+                PairingLogger.warn('findNewPairWhenSomeoneLeft - socket ID mismatch, updating', {
                     userMID: socket.userMID,
                     oldSocketId: user.socket.id,
                     newSocketId: socket.id
@@ -334,6 +352,9 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
             user.preferredCollege = preferredCollege;
             user.isVerified = isVerified;
             user.state = 'WAITING'; // Explicitly set to WAITING state
+            user.callState = 'IDLE';
+            user.micStatus = user.micStatus || AUDIO_MIC_STATUS.UNKNOWN;
+            user.peerId = null;
 
             // Add user back to enhanced pairing queue
             pairingManager.addToQueue(userMID, {
@@ -445,7 +466,7 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                     message: result.message
                 });
 
-                PairingLogger.warning('Failed to update filters', {
+                PairingLogger.warn('Failed to update filters', {
                     userMID,
                     reason: result.message
                 });

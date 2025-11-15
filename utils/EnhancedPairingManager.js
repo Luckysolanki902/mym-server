@@ -1,6 +1,7 @@
 // utils/EnhancedPairingManager.js
 
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const PairingLogger = require('./PairingLogger');
 const PairingQueue = require('./PairingQueue');
 const AtomicLock = require('./atomicLock');
@@ -11,11 +12,12 @@ const { calculateFilterLevel, findBestMatch, getFilterDescription } = require('.
  * Implements Omegle-style queue-based pairing with wait time tracking
  */
 class EnhancedPairingManager {
-  constructor(io, usersMap, userRooms, pageType = 'textchat') {
+  constructor(io, usersMap, userRooms, pageType = 'textchat', options = {}) {
     this.io = io;
     this.usersMap = usersMap;
     this.userRooms = userRooms;
     this.pageType = pageType;
+    this.options = options;
     
     // Initialize queue and lock
     this.queue = new PairingQueue();
@@ -77,6 +79,10 @@ class EnhancedPairingManager {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
       this.isRunning = false;
+      if (!this.queue.isEmpty()) {
+        this.queue.clear();
+      }
+      this.atomicLock.releaseAll();
       PairingLogger.pairing('Pairing manager stopped', { pageType: this.pageType });
     }
   }
@@ -86,6 +92,19 @@ class EnhancedPairingManager {
    * @returns {Object} - Result object with success, message, and data
    */
   addToQueue(userMID) {
+    const isInvalidId =
+      !userMID ||
+      (typeof userMID === 'string' && userMID.trim().length === 0);
+
+    if (isInvalidId) {
+      PairingLogger.warn('Cannot add user to queue - invalid userMID', { userMID });
+      return {
+        success: false,
+        message: 'Invalid user ID',
+        data: { userMID }
+      };
+    }
+
     const user = this.usersMap.get(userMID);
     if (!user) {
       PairingLogger.error('Cannot add user to queue - user not found', { userMID });
@@ -114,13 +133,15 @@ class EnhancedPairingManager {
     // Send queue acknowledgment immediately
     const queueEntry = this.queue.getEntry(userMID);
     if (queueEntry && user.socket && user.socket.connected) {
+      const position = this.queue.getPosition(userMID);
       user.socket.emit('queueJoined', {
         success: true,
-        position: queueEntry.position,
+        position,
         queueSize: this.queue.size(),
         message: 'Successfully added to queue'
       });
-      PairingLogger.socket('Queue acknowledgment sent', { userMID, position: queueEntry.position });
+      this.emitQueueStatus(user);
+      PairingLogger.socket('Queue acknowledgment sent', { userMID, position });
     }
 
     return {
@@ -146,6 +167,8 @@ class EnhancedPairingManager {
       if (user) {
         user.state = 'IDLE';
       }
+
+      this.atomicLock.releaseUser(userMID);
       
       PairingLogger.queue('User removed from queue', {
         userMID,
@@ -200,7 +223,7 @@ class EnhancedPairingManager {
 
         // Validate socket connection before processing
         if (!user.socket || !user.socket.connected) {
-          PairingLogger.warning('User socket disconnected during queue processing, removing', {
+          PairingLogger.warn('User socket disconnected during queue processing, removing', {
             userMID: user.userMID,
             hasSocket: !!user.socket,
             connected: user.socket?.connected
@@ -281,7 +304,8 @@ class EnhancedPairingManager {
     });
 
     // Find best match
-    const match = findBestMatch(user, this.usersMap, filterLevel, this.atomicLock.getLockedUsers());
+  const lockedUsers = new Set(this.atomicLock.getLockedUsers());
+  const match = findBestMatch(user, this.usersMap, filterLevel, lockedUsers);
 
     if (!match) {
       this.metrics.failedAttempts++;
@@ -407,6 +431,19 @@ class EnhancedPairingManager {
       waitTime: Math.floor(user2WaitTime / 1000)
     };
 
+    if (this.pageType === 'audiocall') {
+      const rtcConfig = this.options.rtcConfig || {};
+      const peerToken1 = this.generatePeerToken(roomId, user1.userMID);
+      const peerToken2 = this.generatePeerToken(roomId, user2.userMID);
+      const peerServer = this.options.peerServer || null;
+      pairingData1.peer = { token: peerToken1, rtcConfig, server: peerServer };
+      pairingData2.peer = { token: peerToken2, rtcConfig, server: peerServer };
+      user1.peerToken = peerToken1;
+      user2.peerToken = peerToken2;
+      user1.callState = 'DIALING';
+      user2.callState = 'DIALING';
+    }
+
     // Emit with retry logic for race conditions
     const emitWithRetry = (user, data, userLabel) => {
       if (user.socket && user.socket.connected) {
@@ -417,7 +454,7 @@ class EnhancedPairingManager {
           roomId 
         });
       } else {
-        PairingLogger.warning(`${userLabel} socket not ready, retrying...`, { 
+  PairingLogger.warn(`${userLabel} socket not ready, retrying...`, { 
           userMID: user.userMID,
           hasSocket: !!user.socket,
           connected: user.socket?.connected 
@@ -489,6 +526,16 @@ class EnhancedPairingManager {
         this.emitQueueStatus(user);
       }
     }
+  }
+
+  /**
+   * Generate a cryptographically strong peer token so simultaneous pairings get unique identifiers
+   */
+  generatePeerToken(roomId, userMID) {
+    const entropy = `${roomId || ''}-${userMID || ''}-${uuidv4()}-${Date.now()}`;
+    const base64url = crypto.createHash('sha256').update(entropy).digest('base64url');
+    // PeerJS allows alphanumeric plus a few safe symbols. Strip anything else just in case and cap length.
+    return base64url.replace(/[^0-9A-Za-z_-]/g, '').slice(0, 48);
   }
 
   /**

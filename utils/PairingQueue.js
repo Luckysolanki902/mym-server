@@ -18,7 +18,16 @@ class PairingQueue {
    * @param {number} joinedAt - Timestamp when user joined (milliseconds)
    * @param {number} filterLevel - Current filter level (1-4)
    */
-  enqueue(userMID, joinedAt, filterLevel = 1) {
+  enqueue(userMID, joinedAtOrOptions, filterLevel = 1) {
+    if (!userMID) {
+      PairingLogger.warn('Cannot enqueue without userMID', { userMID });
+      return;
+    }
+
+    const isOptionsObject = joinedAtOrOptions && typeof joinedAtOrOptions === 'object' && !Array.isArray(joinedAtOrOptions);
+    const joinedAt = typeof joinedAtOrOptions === 'number' ? joinedAtOrOptions : Date.now();
+    const preferences = isOptionsObject ? { ...joinedAtOrOptions } : null;
+
     // Check if user already in queue
     const existingIndex = this.queue.findIndex(entry => entry.userMID === userMID);
     if (existingIndex !== -1) {
@@ -28,10 +37,14 @@ class PairingQueue {
 
     const entry = {
       userMID,
+      userId: userMID,
       joinedAt,
+      joinTime: joinedAt,
       filterLevel,
       lastAttempt: Date.now(),
       attempts: 0,
+      pairingAttempts: 0,
+      preferences,
       priority: this.calculatePriority(joinedAt, filterLevel)
     };
 
@@ -117,6 +130,7 @@ class PairingQueue {
     const entry = this.queue.find(e => e.userMID === userMID);
     if (entry) {
       entry.attempts++;
+      entry.pairingAttempts = entry.attempts;
       entry.lastAttempt = Date.now();
     }
   }
@@ -200,6 +214,7 @@ class PairingQueue {
     const entry = this.queue.find(e => e.userMID === userMID);
     if (entry) {
       entry.attempts++;
+      entry.pairingAttempts = entry.attempts;
       entry.lastAttempt = Date.now();
       return entry.attempts;
     }
@@ -216,7 +231,7 @@ class PairingQueue {
     if (entry) {
       return Math.floor((Date.now() - entry.joinedAt) / 1000);
     }
-    return -1;
+    return 0;
   }
 
   /**

@@ -2,25 +2,49 @@
 const { expect } = require('chai');
 const EnhancedPairingManager = require('../utils/EnhancedPairingManager');
 
+const createMockSocket = (id) => ({
+  id,
+  connected: true,
+  emit: () => {},
+  join: () => {}
+});
+
+const createMockUser = (overrides = {}) => {
+  const userMID = overrides.userMID || 'user';
+  return {
+    userMID,
+    socket: overrides.socket || createMockSocket(overrides.socketId || `socket-${userMID}`),
+    userGender: overrides.userGender || 'male',
+    preferredGender: overrides.preferredGender || 'female',
+    userCollege: overrides.userCollege || 'MIT',
+    preferredCollege: overrides.preferredCollege || 'MIT',
+    state: overrides.state || 'IDLE',
+    isPaired: overrides.isPaired || false,
+    ...overrides
+  };
+};
+
 describe('EnhancedPairingManager', () => {
   let manager;
   let emittedEvents;
+  let mockIo;
+  let mockUsersMap;
+  let mockUserRooms;
 
   beforeEach(() => {
     emittedEvents = [];
-    
-    // Mock IO with event emitter
-    const mockIo = {
+
+    mockIo = {
       to: (socketId) => ({
         emit: (event, data) => {
           emittedEvents.push({ socketId, event, data });
         }
       })
     };
-    
-    const mockUsersMap = new Map();
-    const mockUserRooms = new Map();
-    
+
+    mockUsersMap = new Map();
+    mockUserRooms = new Map();
+
     manager = new EnhancedPairingManager(mockIo, mockUsersMap, mockUserRooms, 'testchat');
   });
 
@@ -49,33 +73,32 @@ describe('EnhancedPairingManager', () => {
 
   describe('addToQueue()', () => {
     it('should add user to queue successfully', () => {
-      const result = manager.addToQueue('user1', {
-        userGender: 'male',
-        userCollege: 'MIT',
-        preferredGender: 'female',
-        preferredCollege: 'MIT'
-      });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      const result = manager.addToQueue('user1');
       
       expect(result.success).to.be.true;
       expect(manager.queue.contains('user1')).to.be.true;
     });
 
     it('should emit queueStatus event after adding user', (done) => {
-      const mockSocket = { id: 'socket1' };
-      const mockUsersMap = new Map([['user1', { socket: mockSocket }]]);
-      
-      const mockIo = {
-        to: (socketId) => ({
-          emit: (event, data) => {
-            if (event === 'queueStatus') {
-              expect(data.position).to.be.a('number');
-              expect(data.queueLength).to.be.a('number');
-              done();
-            }
+      const queueEvents = [];
+      const mockSocket = {
+        id: 'socket1',
+        connected: true,
+        emit: (event, data) => {
+          if (event === 'queueStatus') {
+            queueEvents.push(data);
+            expect(data.position).to.be.a('number');
+            expect(data.queueSize).to.be.a('number');
+            done();
           }
-        })
+        }
       };
-      
+
+      const mockUsersMap = new Map([
+        ['user1', createMockUser({ userMID: 'user1', socket: mockSocket })]
+      ]);
+
       const testManager = new EnhancedPairingManager(
         mockIo,
         mockUsersMap,
@@ -83,26 +106,21 @@ describe('EnhancedPairingManager', () => {
         'testchat'
       );
       
-      testManager.addToQueue('user1', {
-        userGender: 'male',
-        userCollege: 'MIT',
-        preferredGender: 'female',
-        preferredCollege: 'MIT'
-      });
-      
+      testManager.addToQueue('user1');
       testManager.stop();
     });
 
     it('should not add duplicate user', () => {
-      manager.addToQueue('user1', { userGender: 'male' });
-      const result = manager.addToQueue('user1', { userGender: 'male' });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.addToQueue('user1');
+      const result = manager.addToQueue('user1');
       
       expect(result.success).to.be.true; // Still success but updates preferences
       expect(manager.queue.size()).to.equal(1);
     });
 
     it('should reject invalid userId', () => {
-      const result = manager.addToQueue('', { userGender: 'male' });
+      const result = manager.addToQueue('');
       
       expect(result.success).to.be.false;
       expect(result.message).to.include('Invalid');
@@ -111,7 +129,8 @@ describe('EnhancedPairingManager', () => {
 
   describe('removeFromQueue()', () => {
     it('should remove user from queue', () => {
-      manager.addToQueue('user1', { userGender: 'male' });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.addToQueue('user1');
       
       const result = manager.removeFromQueue('user1');
       
@@ -126,8 +145,10 @@ describe('EnhancedPairingManager', () => {
     });
 
     it('should release lock if user was locked', () => {
-      manager.addToQueue('user1', { userGender: 'male' });
-      manager.addToQueue('user2', { userGender: 'female' });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.usersMap.set('user2', createMockUser({ userMID: 'user2', userGender: 'female', preferredGender: 'male' }));
+      manager.addToQueue('user1');
+      manager.addToQueue('user2');
       
       manager.lock.tryAcquire('user1', 'user2');
       
@@ -149,12 +170,8 @@ describe('EnhancedPairingManager', () => {
     });
 
     it('should not pair single user', (done) => {
-      manager.addToQueue('user1', {
-        userGender: 'male',
-        userCollege: 'MIT',
-        preferredGender: 'female',
-        preferredCollege: 'MIT'
-      });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.addToQueue('user1');
       
       manager.processQueue();
       
@@ -166,36 +183,40 @@ describe('EnhancedPairingManager', () => {
     });
 
     it('should attempt pairing for compatible users', (done) => {
-      const mockSocket1 = { id: 'socket1', join: () => {} };
-      const mockSocket2 = { id: 'socket2', join: () => {} };
+      let pairingSuccessEmitted = false;
+      const mockSocket1 = {
+        id: 'socket1',
+        join: () => {},
+        emit: (event) => {
+          if (event === 'pairingSuccess') pairingSuccessEmitted = true;
+        },
+        connected: true
+      };
+      const mockSocket2 = {
+        id: 'socket2',
+        join: () => {},
+        emit: (event) => {
+          if (event === 'pairingSuccess') pairingSuccessEmitted = true;
+        },
+        connected: true
+      };
       
       const mockUsersMap = new Map([
-        ['user1', { 
+        ['user1', createMockUser({
+          userMID: 'user1',
           socket: mockSocket1,
-          isPaired: false,
           userGender: 'male',
           preferredGender: 'female'
-        }],
-        ['user2', { 
+        })],
+        ['user2', createMockUser({
+          userMID: 'user2',
           socket: mockSocket2,
-          isPaired: false,
           userGender: 'female',
           preferredGender: 'male'
-        }]
+        })]
       ]);
       
       const mockUserRooms = new Map();
-      
-      let pairingSuccessEmitted = false;
-      const mockIo = {
-        to: (socketId) => ({
-          emit: (event, data) => {
-            if (event === 'pairingSuccess') {
-              pairingSuccessEmitted = true;
-            }
-          }
-        })
-      };
       
       const testManager = new EnhancedPairingManager(
         mockIo,
@@ -204,19 +225,8 @@ describe('EnhancedPairingManager', () => {
         'testchat'
       );
       
-      testManager.addToQueue('user1', {
-        userGender: 'male',
-        userCollege: 'MIT',
-        preferredGender: 'female',
-        preferredCollege: 'MIT'
-      });
-      
-      testManager.addToQueue('user2', {
-        userGender: 'female',
-        userCollege: 'MIT',
-        preferredGender: 'male',
-        preferredCollege: 'MIT'
-      });
+      testManager.addToQueue('user1');
+      testManager.addToQueue('user2');
       
       testManager.processQueue();
       
@@ -246,8 +256,10 @@ describe('EnhancedPairingManager', () => {
     });
 
     it('should update metrics after operations', () => {
-      manager.addToQueue('user1', { userGender: 'male' });
-      manager.addToQueue('user2', { userGender: 'female' });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.usersMap.set('user2', createMockUser({ userMID: 'user2', userGender: 'female', preferredGender: 'male' }));
+      manager.addToQueue('user1');
+      manager.addToQueue('user2');
       
       const metrics = manager.getMetrics();
       
@@ -270,8 +282,10 @@ describe('EnhancedPairingManager', () => {
     });
 
     it('should clear queue on stop', () => {
-      manager.addToQueue('user1', { userGender: 'male' });
-      manager.addToQueue('user2', { userGender: 'female' });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.usersMap.set('user2', createMockUser({ userMID: 'user2', userGender: 'female', preferredGender: 'male' }));
+      manager.addToQueue('user1');
+      manager.addToQueue('user2');
       
       manager.stop();
       
@@ -284,19 +298,18 @@ describe('EnhancedPairingManager', () => {
       // Set shorter timeout for testing
       process.env.FILTER_LEVEL_1_TIMEOUT = '100';
       
+      const testUsersMap = new Map([
+        ['user1', createMockUser({ userMID: 'user1' })]
+      ]);
+
       const testManager = new EnhancedPairingManager(
         manager.io,
-        new Map(),
+        testUsersMap,
         new Map(),
         'testchat'
       );
       
-      testManager.addToQueue('user1', {
-        userGender: 'male',
-        userCollege: 'MIT',
-        preferredGender: 'female',
-        preferredCollege: 'MIT'
-      });
+      testManager.addToQueue('user1');
       
       setTimeout(() => {
         const user = testManager.queue.getUser('user1');
@@ -309,15 +322,15 @@ describe('EnhancedPairingManager', () => {
   });
 
   describe('concurrent pairing prevention', () => {
-    it('should not pair locked users', () => {
-      const mockSocket1 = { id: 'socket1', join: () => {} };
-      const mockSocket2 = { id: 'socket2', join: () => {} };
-      const mockSocket3 = { id: 'socket3', join: () => {} };
+    it('should not pair locked users', (done) => {
+      const mockSocket1 = { id: 'socket1', join: () => {}, emit: () => {}, connected: true };
+      const mockSocket2 = { id: 'socket2', join: () => {}, emit: () => {}, connected: true };
+      const mockSocket3 = { id: 'socket3', join: () => {}, emit: () => {}, connected: true };
       
       const mockUsersMap = new Map([
-        ['user1', { socket: mockSocket1, isPaired: false }],
-        ['user2', { socket: mockSocket2, isPaired: false }],
-        ['user3', { socket: mockSocket3, isPaired: false }]
+        ['user1', createMockUser({ userMID: 'user1', socket: mockSocket1 })],
+        ['user2', createMockUser({ userMID: 'user2', socket: mockSocket2, userGender: 'female', preferredGender: 'male' })],
+        ['user3', createMockUser({ userMID: 'user3', socket: mockSocket3, userGender: 'female', preferredGender: 'male' })]
       ]);
       
       const testManager = new EnhancedPairingManager(
@@ -327,27 +340,30 @@ describe('EnhancedPairingManager', () => {
         'testchat'
       );
       
-      testManager.addToQueue('user1', { userGender: 'male', preferredGender: 'female' });
-      testManager.addToQueue('user2', { userGender: 'female', preferredGender: 'male' });
-      testManager.addToQueue('user3', { userGender: 'female', preferredGender: 'male' });
+      testManager.addToQueue('user1');
+      testManager.addToQueue('user2');
+      testManager.addToQueue('user3');
       
-      // Lock user1 and user2
+      // Lock user1 and user2 so user1 cannot be paired
       testManager.lock.tryAcquire('user1', 'user2');
       
-      // Try to pair user1 with user3 - should fail
-      const result = testManager.attemptPairing('user1', 'user3', 1);
+      testManager.processQueue();
       
-      expect(result.success).to.be.false;
-      expect(result.reason).to.include('locked');
-      
-      testManager.stop();
+      setTimeout(() => {
+        expect(testManager.queue.contains('user1')).to.be.true;
+        expect(testManager.queue.contains('user3')).to.be.true;
+        testManager.stop();
+        done();
+      }, 100);
     });
   });
 
   describe('metrics tracking', () => {
     it('should track pairing attempts', () => {
-      manager.addToQueue('user1', { userGender: 'male' });
-      manager.addToQueue('user2', { userGender: 'female' });
+      manager.usersMap.set('user1', createMockUser({ userMID: 'user1' }));
+      manager.usersMap.set('user2', createMockUser({ userMID: 'user2', userGender: 'female', preferredGender: 'male' }));
+      manager.addToQueue('user1');
+      manager.addToQueue('user2');
       
       const initialAttempts = manager.metrics.totalPairings;
       
@@ -358,20 +374,12 @@ describe('EnhancedPairingManager', () => {
     });
 
     it('should track successful pairings by level', (done) => {
-      const mockSocket1 = { id: 'socket1', join: () => {} };
-      const mockSocket2 = { id: 'socket2', join: () => {} };
+  const mockSocket1 = { id: 'socket1', join: () => {}, emit: () => {}, connected: true };
+  const mockSocket2 = { id: 'socket2', join: () => {}, emit: () => {}, connected: true };
       
       const mockUsersMap = new Map([
-        ['user1', { 
-          socket: mockSocket1,
-          isPaired: false,
-          userGender: 'male'
-        }],
-        ['user2', { 
-          socket: mockSocket2,
-          isPaired: false,
-          userGender: 'female'
-        }]
+        ['user1', createMockUser({ userMID: 'user1', socket: mockSocket1, userGender: 'male', preferredGender: 'female' })],
+        ['user2', createMockUser({ userMID: 'user2', socket: mockSocket2, userGender: 'female', preferredGender: 'male' })]
       ]);
       
       const testManager = new EnhancedPairingManager(
@@ -381,19 +389,8 @@ describe('EnhancedPairingManager', () => {
         'testchat'
       );
       
-      testManager.addToQueue('user1', {
-        userGender: 'male',
-        userCollege: 'MIT',
-        preferredGender: 'female',
-        preferredCollege: 'MIT'
-      });
-      
-      testManager.addToQueue('user2', {
-        userGender: 'female',
-        userCollege: 'MIT',
-        preferredGender: 'male',
-        preferredCollege: 'MIT'
-      });
+      testManager.addToQueue('user1');
+      testManager.addToQueue('user2');
       
       testManager.processQueue();
       
@@ -419,14 +416,15 @@ describe('EnhancedPairingManager', () => {
         const mockSocket = { 
           id: `socket${i}`, 
           join: () => {},
-          userMID: `user${i}`
+          emit: () => {},
+          connected: true
         };
-        mockUsersMap.set(`user${i}`, {
+        mockUsersMap.set(`user${i}`, createMockUser({
+          userMID: `user${i}`,
           socket: mockSocket,
-          isPaired: false,
           userGender: i % 2 === 0 ? 'male' : 'female',
           preferredGender: i % 2 === 0 ? 'female' : 'male'
-        });
+        }));
       }
       
       const testManager = new EnhancedPairingManager(

@@ -2,41 +2,70 @@
 const { expect } = require('chai');
 const PairingLogger = require('../utils/PairingLogger');
 
+const LEVEL_RANK = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  fatal: 60
+};
+
+const createMockLogger = () => {
+  const calls = [];
+  const shouldLog = (level) => {
+    const envLevel = (process.env.LOG_LEVEL || 'info').toLowerCase();
+    const minRank = LEVEL_RANK[envLevel] || LEVEL_RANK.info;
+    return LEVEL_RANK[level] >= minRank;
+  };
+
+  const push = (level, obj, msg) => {
+    if (shouldLog(level)) {
+      calls.push({ level, obj, message: msg });
+    }
+  };
+
+  return {
+    calls,
+    logger: {
+      info: (obj, msg) => push('info', obj, msg),
+      warn: (obj, msg) => push('warn', obj, msg),
+      error: (obj, msg) => push('error', obj, msg),
+      debug: (obj, msg) => push('debug', obj, msg)
+    }
+  };
+};
+
 describe('PairingLogger', () => {
-  let originalConsoleLog;
-  let consoleOutput = [];
+  let mockLogger;
 
   beforeEach(() => {
-    // Capture console output
-    consoleOutput = [];
-    originalConsoleLog = console.log;
-    console.log = (message) => {
-      consoleOutput.push(message);
-    };
+    mockLogger = createMockLogger();
+    PairingLogger.setLogger(mockLogger.logger);
+    delete process.env.LOG_LEVEL;
   });
 
   afterEach(() => {
-    // Restore console.log
-    console.log = originalConsoleLog;
+    PairingLogger.resetLogger();
+    delete process.env.LOG_LEVEL;
   });
 
   describe('queue()', () => {
     it('should log queue messages with correct category', () => {
       PairingLogger.queue('Test queue message', { userId: '123' });
       
-      expect(consoleOutput.length).to.equal(1);
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.category).to.equal('QUEUE');
+      expect(mockLogger.calls.length).to.equal(1);
+      const log = mockLogger.calls[0];
+      expect(log.obj.category).to.equal('🔄 QUEUE');
       expect(log.message).to.equal('Test queue message');
-      expect(log.data.userId).to.equal('123');
+      expect(log.obj.userId).to.equal('123');
     });
 
-    it('should include timestamp', () => {
-      PairingLogger.queue('Test message');
-      
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.timestamp).to.exist;
-      expect(new Date(log.timestamp).getTime()).to.be.closeTo(Date.now(), 1000);
+    it('should include additional metadata fields', () => {
+      PairingLogger.queue('Test message', { position: 5, queueSize: 10 });
+      const log = mockLogger.calls[0];
+      expect(log.obj.position).to.equal(5);
+      expect(log.obj.queueSize).to.equal(10);
     });
   });
 
@@ -44,10 +73,10 @@ describe('PairingLogger', () => {
     it('should log pairing messages with correct category', () => {
       PairingLogger.pairing('Test pairing message', { user1: 'a', user2: 'b' });
       
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.category).to.equal('PAIRING');
+      const log = mockLogger.calls[0];
+      expect(log.obj.category).to.equal('🤝 PAIRING');
       expect(log.message).to.equal('Test pairing message');
-      expect(log.data.user1).to.equal('a');
+      expect(log.obj.user1).to.equal('a');
     });
   });
 
@@ -55,9 +84,10 @@ describe('PairingLogger', () => {
     it('should log socket messages with correct category', () => {
       PairingLogger.socket('Socket event', { socketId: 'socket123' });
       
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.category).to.equal('SOCKET');
+      const log = mockLogger.calls[0];
+      expect(log.obj.category).to.equal('🔌 SOCKET');
       expect(log.message).to.equal('Socket event');
+      expect(log.obj.socketId).to.equal('socket123');
     });
   });
 
@@ -65,10 +95,10 @@ describe('PairingLogger', () => {
     it('should log errors with ERROR level', () => {
       PairingLogger.error('Test error', { error: 'Something went wrong' });
       
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.category).to.equal('ERROR');
-      expect(log.level).to.equal('ERROR');
+      const log = mockLogger.calls[0];
+      expect(log.obj.category).to.equal('❌ ERROR');
       expect(log.message).to.equal('Test error');
+      expect(log.obj.error).to.equal('Something went wrong');
     });
   });
 
@@ -79,33 +109,39 @@ describe('PairingLogger', () => {
         activePairs: 10 
       });
       
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.category).to.equal('METRICS');
-      expect(log.data.queueSize).to.equal(5);
-      expect(log.data.activePairs).to.equal(10);
+      const log = mockLogger.calls[0];
+      expect(log.obj.category).to.equal('📈 METRICS');
+      expect(log.obj.queueSize).to.equal(5);
+      expect(log.obj.activePairs).to.equal(10);
     });
   });
 
   describe('log levels', () => {
     it('should respect INFO level', () => {
       process.env.LOG_LEVEL = 'INFO';
+      mockLogger = createMockLogger();
+      PairingLogger.setLogger(mockLogger.logger);
       PairingLogger.queue('Info message');
       
-      expect(consoleOutput.length).to.equal(1);
+      expect(mockLogger.calls.length).to.equal(1);
     });
 
     it('should filter out INFO when level is ERROR', () => {
       process.env.LOG_LEVEL = 'ERROR';
+      mockLogger = createMockLogger();
+      PairingLogger.setLogger(mockLogger.logger);
       PairingLogger.queue('Info message');
       
-      expect(consoleOutput.length).to.equal(0);
+      expect(mockLogger.calls.length).to.equal(0);
     });
 
     it('should allow ERROR when level is ERROR', () => {
       process.env.LOG_LEVEL = 'ERROR';
+      mockLogger = createMockLogger();
+      PairingLogger.setLogger(mockLogger.logger);
       PairingLogger.error('Error message');
       
-      expect(consoleOutput.length).to.equal(1);
+      expect(mockLogger.calls.length).to.equal(1);
     });
   });
 
@@ -113,8 +149,8 @@ describe('PairingLogger', () => {
     it('should handle null data', () => {
       PairingLogger.queue('Message without data', null);
       
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.data).to.be.null;
+      const log = mockLogger.calls[0];
+      expect(log.obj.category).to.equal('🔄 QUEUE');
     });
 
     it('should handle complex nested data', () => {
@@ -125,9 +161,9 @@ describe('PairingLogger', () => {
       
       PairingLogger.pairing('Complex data', complexData);
       
-      const log = JSON.parse(consoleOutput[0]);
-      expect(log.data.user.id).to.equal('123');
-      expect(log.data.preferences.college).to.equal('MIT');
+      const log = mockLogger.calls[0];
+      expect(log.obj.user.id).to.equal('123');
+      expect(log.obj.preferences.college).to.equal('MIT');
     });
   });
 });

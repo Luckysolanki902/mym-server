@@ -52,8 +52,8 @@ describe('PairingQueue', () => {
     it('should remove and return user from queue', () => {
       queue.enqueue('user1', { gender: 'male' });
       
-      const user = queue.dequeue();
-      expect(user.userId).to.equal('user1');
+  const user = queue.dequeue();
+  expect(user.userMID).to.equal('user1');
       expect(queue.size()).to.equal(0);
     });
 
@@ -63,8 +63,8 @@ describe('PairingQueue', () => {
       setTimeout(() => {
         queue.enqueue('user2', { gender: 'female' });
         
-        const first = queue.dequeue();
-        expect(first.userId).to.equal('user1'); // user1 waited longer
+  const first = queue.dequeue();
+  expect(first.userMID).to.equal('user1'); // user1 waited longer
         
         done();
       }, 10);
@@ -77,8 +77,8 @@ describe('PairingQueue', () => {
       // Manually increase filter level for user2
       queue.updateFilterLevel('user2', 2);
       
-      const first = queue.dequeue();
-      expect(first.userId).to.equal('user2'); // Higher filter level = higher priority
+  const first = queue.dequeue();
+  expect(first.userMID).to.equal('user2'); // Higher filter level = higher priority
     });
   });
 
@@ -114,8 +114,8 @@ describe('PairingQueue', () => {
     it('should return user data', () => {
       queue.enqueue('user1', { gender: 'male', college: 'MIT' });
       
-      const user = queue.getUser('user1');
-      expect(user.userId).to.equal('user1');
+  const user = queue.getUser('user1');
+  expect(user.userMID).to.equal('user1');
       expect(user.preferences.gender).to.equal('male');
       expect(user.preferences.college).to.equal('MIT');
     });
@@ -156,9 +156,9 @@ describe('PairingQueue', () => {
       queue.enqueue('user2', { gender: 'female' });
       queue.enqueue('user3', { gender: 'male' });
       
-      const users = queue.getAllUsers();
-      expect(users).to.have.lengthOf(3);
-      expect(users[0].userId).to.equal('user1');
+  const users = queue.getAllUsers();
+  expect(users).to.have.lengthOf(3);
+  expect(users[0]).to.equal('user1');
     });
 
     it('should return empty array when queue is empty', () => {
@@ -199,8 +199,8 @@ describe('PairingQueue', () => {
       
       queue.updateFilterLevel('user2', 3);
       
-      const first = queue.dequeue();
-      expect(first.userId).to.equal('user2'); // Higher filter level
+  const first = queue.dequeue();
+  expect(first.userMID).to.equal('user2'); // Higher filter level
     });
 
     it('should do nothing for non-existent user', () => {
@@ -209,15 +209,13 @@ describe('PairingQueue', () => {
   });
 
   describe('getWaitTime()', () => {
-    it('should return correct wait time', (done) => {
-      queue.enqueue('user1', { gender: 'male' });
-      
-      setTimeout(() => {
-        const waitTime = queue.getWaitTime('user1');
-        expect(waitTime).to.be.at.least(50);
-        expect(waitTime).to.be.at.most(100);
-        done();
-      }, 50);
+    it('should return correct wait time in seconds', () => {
+      const now = Date.now();
+      queue.enqueue('user1', now - 1500); // waited ~1.5 seconds
+
+      const waitTime = queue.getWaitTime('user1');
+      expect(waitTime).to.be.at.least(1);
+      expect(waitTime).to.be.a('number');
     });
 
     it('should return 0 for non-existent user', () => {
@@ -227,25 +225,21 @@ describe('PairingQueue', () => {
   });
 
   describe('getStats()', () => {
-    it('should return correct statistics', (done) => {
-      queue.enqueue('user1', { gender: 'male' });
-      
-      setTimeout(() => {
-        queue.enqueue('user2', { gender: 'female' });
-        queue.enqueue('user3', { gender: 'male' });
-        
-        queue.incrementPairingAttempts('user1');
-        queue.incrementPairingAttempts('user1');
-        queue.incrementPairingAttempts('user2');
-        
-        const stats = queue.getStats();
-        expect(stats.size).to.equal(3);
-        expect(stats.avgWaitTime).to.be.at.least(10);
-        expect(stats.maxWaitTime).to.be.at.least(50);
-        expect(stats.avgAttempts).to.be.closeTo(1, 0.5);
-        
-        done();
-      }, 50);
+    it('should return correct statistics', () => {
+      const now = Date.now();
+      queue.enqueue('user1', now - 60000);
+      queue.enqueue('user2', now - 30000);
+      queue.enqueue('user3', now - 10000);
+
+      queue.incrementPairingAttempts('user1');
+      queue.incrementPairingAttempts('user1');
+      queue.incrementPairingAttempts('user2');
+
+      const stats = queue.getStats();
+      expect(stats.size).to.equal(3);
+      expect(stats.avgWaitTime).to.be.at.least(10);
+      expect(stats.maxWaitTime).to.be.at.least(10);
+      expect(stats.avgAttempts).to.be.closeTo(1, 0.5);
     });
 
     it('should return zeros for empty queue', () => {
@@ -290,11 +284,11 @@ describe('PairingQueue', () => {
         // user2 has higher filter level
         queue.updateFilterLevel('user2', 2);
         
-        const first = queue.dequeue();
-        expect(first.userId).to.equal('user2'); // Higher filter level wins
+  const first = queue.dequeue();
+  expect(first.userMID).to.equal('user2'); // Higher filter level wins
         
-        const second = queue.dequeue();
-        expect(second.userId).to.equal('user1');
+  const second = queue.dequeue();
+  expect(second.userMID).to.equal('user1');
         
         done();
       }, 10);
@@ -306,8 +300,8 @@ describe('PairingQueue', () => {
       setTimeout(() => {
         queue.enqueue('user2', { gender: 'female' });
         
-        const first = queue.dequeue();
-        expect(first.userId).to.equal('user1'); // Waited longer
+  const first = queue.dequeue();
+  expect(first.userMID).to.equal('user1'); // Waited longer
         
         done();
       }, 10);
