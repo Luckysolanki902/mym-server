@@ -7,6 +7,16 @@ const PairingQueue = require('./PairingQueue');
 const AtomicLock = require('./atomicLock');
 const { calculateFilterLevel, findBestMatch, getFilterDescription } = require('./matchingAlgorithm');
 
+const PEER_ID_ALLOWED_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+const randomAlphanumericChar = () => {
+  if (typeof crypto.randomInt === 'function') {
+    return PEER_ID_ALLOWED_CHARS[crypto.randomInt(PEER_ID_ALLOWED_CHARS.length)];
+  }
+  const buffer = crypto.randomBytes(1);
+  return PEER_ID_ALLOWED_CHARS[buffer[0] % PEER_ID_ALLOWED_CHARS.length];
+};
+
 /**
  * Enhanced Pairing Manager with progressive filter matching
  * Implements Omegle-style queue-based pairing with wait time tracking
@@ -534,8 +544,22 @@ class EnhancedPairingManager {
   generatePeerToken(roomId, userMID) {
     const entropy = `${roomId || ''}-${userMID || ''}-${uuidv4()}-${Date.now()}`;
     const base64url = crypto.createHash('sha256').update(entropy).digest('base64url');
-    // PeerJS allows alphanumeric plus a few safe symbols. Strip anything else just in case and cap length.
-    return base64url.replace(/[^0-9A-Za-z_-]/g, '').slice(0, 48);
+    const sanitized = base64url.replace(/[^0-9A-Za-z_-]/g, '');
+    let token = sanitized.slice(0, 48);
+
+    if (!token.length) {
+      token = uuidv4().replace(/[^0-9A-Za-z_-]/g, '').slice(0, 48);
+    }
+
+    if (!token.length) {
+      token = randomAlphanumericChar();
+    }
+
+    if (!/^[A-Za-z0-9]/.test(token)) {
+      token = `${randomAlphanumericChar()}${token.slice(1)}`;
+    }
+
+    return token;
   }
 
   /**

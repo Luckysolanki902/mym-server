@@ -404,6 +404,19 @@ describe('EnhancedPairingManager', () => {
     });
   });
 
+  describe('generatePeerToken()', () => {
+    it('produces PeerJS-safe IDs', () => {
+      const regex = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/;
+      for (let i = 0; i < 25; i += 1) {
+        const token = manager.generatePeerToken(`room-${i}`, `user-${i}`);
+        expect(token).to.be.a('string');
+        expect(token.length).to.be.greaterThan(0);
+        expect(token.length).to.be.at.most(48);
+        expect(regex.test(token)).to.be.true;
+      }
+    });
+  });
+
   describe('stress test', () => {
     it('should handle 50 users efficiently', function(done) {
       this.timeout(5000);
