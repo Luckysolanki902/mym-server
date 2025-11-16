@@ -10,6 +10,19 @@ const DEFAULT_TONES = Object.freeze({
   DISCONNECTED: 'disconnected'
 });
 
+const PairingLogger = require('../PairingLogger');
+
+const pickFirstDefinedValue = (envKeys, defaultValue) => {
+  for (const key of envKeys) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value.trim() !== '') {
+      return { value: value.trim(), source: key };
+    }
+  }
+
+  return { value: defaultValue, source: 'default' };
+};
+
 const parseServerList = (raw) => {
   if (!raw) return [];
   return raw
@@ -49,19 +62,47 @@ const normalizeProtocol = (value) => {
 };
 
 const getPeerServerConfig = () => {
-  const host = process.env.AUDIOCALL_PEER_PUBLIC_HOST || process.env.AUDIOCALL_SERVER_HOST || process.env.SERVER_PUBLIC_HOST || 'localhost';
-  const port = process.env.AUDIOCALL_PEER_PUBLIC_PORT || process.env.AUDIOCALL_SERVER_PORT || process.env.PORT || '1000';
-  const protocol = normalizeProtocol(process.env.AUDIOCALL_PEER_PUBLIC_PROTOCOL || process.env.AUDIOCALL_SERVER_PROTOCOL || 'http');
-  const path = process.env.AUDIOCALL_PEER_PUBLIC_PATH || '/peerjs';
-  const numericPort = port === '' ? '' : String(port);
-
-  return {
-    host,
+  const hostCandidate = pickFirstDefinedValue(
+    ['AUDIOCALL_PEER_PUBLIC_HOST', 'AUDIOCALL_SERVER_HOST', 'SERVER_PUBLIC_HOST'],
+    'localhost'
+  );
+  const portCandidate = pickFirstDefinedValue(
+    ['AUDIOCALL_PEER_PUBLIC_PORT', 'AUDIOCALL_SERVER_PORT', 'PORT'],
+    '1000'
+  );
+  const protocolCandidate = pickFirstDefinedValue(
+    ['AUDIOCALL_PEER_PUBLIC_PROTOCOL', 'AUDIOCALL_SERVER_PROTOCOL'],
+    'http'
+  );
+  const pathCandidate = pickFirstDefinedValue(['AUDIOCALL_PEER_PUBLIC_PATH'], '/peerjs');
+  const protocol = normalizeProtocol(protocolCandidate.value);
+  const numericPort = portCandidate.value === '' ? '' : String(portCandidate.value);
+  const secure = protocol === 'https:';
+  const config = {
+    host: hostCandidate.value,
     port: numericPort,
     protocol,
-    secure: protocol === 'https:',
-    path
+    secure,
+    path: pathCandidate.value
   };
+
+  PairingLogger.info('PeerJS server configuration resolved', {
+    ...config,
+    envSources: {
+      host: hostCandidate.source,
+      port: portCandidate.source,
+      protocol: protocolCandidate.source,
+      path: pathCandidate.source
+    },
+    rawValues: {
+      host: hostCandidate.value,
+      port: portCandidate.value,
+      protocol: protocolCandidate.value,
+      path: pathCandidate.value
+    }
+  });
+
+  return config;
 };
 
 const getRTCConfig = () => ({
