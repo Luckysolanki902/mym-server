@@ -7,7 +7,6 @@ const handleSocketEvents = require('./utils/socketEvents');
 const PairingManager = require('./utils/pairingManger');
 const EnhancedPairingManager = require('./utils/EnhancedPairingManager');
 const PairingLogger = require('./utils/PairingLogger');
-const handleAudioCallEvents = require('./utils/audioCall/handlers');
 const { getRTCConfig, getPeerServerConfig } = require('./utils/audioCall/constants');
 const audioCallMetrics = require('./utils/audioCall/metrics');
 
@@ -108,8 +107,7 @@ io.on('connection', (socket) => {
     if (pageType === 'textchat') {
       handleSocketEvents(io, socket, textChatUsers, textChatQueue, textChatRooms, textChatPairingManager);
     } else if (pageType === 'audiocall') {
-  handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
-  handleAudioCallEvents(io, socket, audioCallUsers, audioCallRooms);
+      handleSocketEvents(io, socket, audioCallUsers, audioCallQueue, audioCallRooms, audioCallPairingManager);
     } else if (pageType === 'videocall') {
       handleSocketEvents(io, socket, videoCallUsers, videoCallQueue, videoCallRooms, videoCallPairingManager);
     } else {
