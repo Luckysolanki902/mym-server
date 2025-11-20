@@ -509,7 +509,8 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 // Find the partner in the same room and notify them
                 const room = userRooms.get(roomId);
                 if (room) {
-                    const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                    // The room stores full user objects, so access userMID from them
+                    const partnerMID = room.user1?.userMID === userMID ? room.user2?.userMID : room.user1?.userMID;
                     const partner = usersMap.get(partnerMID);
                     
                     if (partner && partner.socket) {
@@ -522,8 +523,28 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                             peerId,
                             roomId
                         });
+                    } else {
+                        PairingLogger.warn('Partner not found or socket not ready', {
+                            userMID,
+                            partnerMID,
+                            hasPartner: !!partner,
+                            hasSocket: !!partner?.socket,
+                            roomId
+                        });
                     }
+                } else {
+                    PairingLogger.warn('Room not found for callReady', {
+                        userMID,
+                        roomId,
+                        availableRooms: Array.from(userRooms.keys())
+                    });
                 }
+            } else {
+                PairingLogger.warn('User not found for callReady', {
+                    userMID,
+                    peerId,
+                    roomId
+                });
             }
         } catch (error) {
             PairingLogger.error('callReady event error', { error: error.message, stack: error.stack });
