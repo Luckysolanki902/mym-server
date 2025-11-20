@@ -481,6 +481,194 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
     });
 
     /**
+     * Event: callReady
+     * Handles when a peer is ready to make/receive calls
+     */
+    socket.on('callReady', (data) => {
+        try {
+            const { userMID, peerId, roomId } = data;
+            
+            PairingLogger.socket('User call ready', {
+                userMID,
+                peerId,
+                roomId,
+                socketId: socket.id
+            });
+
+            if (!userMID || !peerId || !roomId) {
+                PairingLogger.error('Invalid callReady data', { userMID, peerId, roomId });
+                return;
+            }
+
+            // Store the peerId in the user's data
+            const user = usersMap.get(userMID);
+            if (user) {
+                user.peerId = peerId;
+                user.peerReady = true;
+                
+                // Find the partner in the same room and notify them
+                const room = userRooms.get(roomId);
+                if (room) {
+                    const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                    const partner = usersMap.get(partnerMID);
+                    
+                    if (partner && partner.socket) {
+                        // Send the peerId to the partner
+                        partner.socket.emit('remoteReady', { peerId });
+                        
+                        PairingLogger.socket('Emitted remoteReady to partner', {
+                            userMID,
+                            partnerMID,
+                            peerId,
+                            roomId
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            PairingLogger.error('callReady event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
+     * Event: callConnected
+     * Handles when a call successfully connects
+     */
+    socket.on('callConnected', (data) => {
+        try {
+            const { userMID, roomId } = data;
+            
+            PairingLogger.socket('Call connected', {
+                userMID,
+                roomId,
+                socketId: socket.id
+            });
+
+            const user = usersMap.get(userMID);
+            if (user) {
+                user.callConnected = true;
+                user.callStartTime = Date.now();
+            }
+        } catch (error) {
+            PairingLogger.error('callConnected event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
+     * Event: callEnded
+     * Handles when a user ends a call
+     */
+    socket.on('callEnded', (data) => {
+        try {
+            const { userMID, reason } = data;
+            
+            PairingLogger.socket('Call ended by user', {
+                userMID,
+                reason,
+                socketId: socket.id
+            });
+
+            const user = usersMap.get(userMID);
+            if (user && user.room) {
+                const roomId = user.room;
+                const room = userRooms.get(roomId);
+                
+                if (room) {
+                    const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                    const partner = usersMap.get(partnerMID);
+                    
+                    if (partner && partner.socket) {
+                        partner.socket.emit('callEnded', { reason });
+                        
+                        // Reset partner state
+                        partner.isPaired = false;
+                        partner.room = null;
+                        partner.pairedSocketId = null;
+                        partner.peerId = null;
+                        partner.peerReady = false;
+                        partner.callConnected = false;
+                    }
+                }
+                
+                // Reset user state
+                user.isPaired = false;
+                user.room = null;
+                user.pairedSocketId = null;
+                user.peerId = null;
+                user.peerReady = false;
+                user.callConnected = false;
+                
+                // Clean up the room
+                userRooms.delete(roomId);
+            }
+        } catch (error) {
+            PairingLogger.error('callEnded event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
+     * Event: callHeartbeat
+     * Handles heartbeat to keep call alive
+     */
+    socket.on('callHeartbeat', (data) => {
+        try {
+            const { userMID } = data;
+            const user = usersMap.get(userMID);
+            if (user) {
+                user.lastHeartbeat = Date.now();
+            }
+        } catch (error) {
+            PairingLogger.error('callHeartbeat event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
+     * Event: callQuality
+     * Handles call quality metrics
+     */
+    socket.on('callQuality', (data) => {
+        try {
+            const { userMID, rtt, jitter, packetLoss } = data;
+            
+            // Just log for now, could be used for analytics later
+            PairingLogger.debug('Call quality metrics', {
+                userMID,
+                rtt,
+                jitter,
+                packetLoss
+            });
+        } catch (error) {
+            PairingLogger.error('callQuality event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
+     * Event: micPermissionResult
+     * Handles microphone permission result from client
+     */
+    socket.on('micPermissionResult', (data) => {
+        try {
+            const { userMID, status } = data;
+            
+            PairingLogger.socket('Mic permission result', {
+                userMID,
+                status,
+                socketId: socket.id
+            });
+
+            const user = usersMap.get(userMID);
+            if (user) {
+                user.micStatus = status;
+            }
+
+            // Acknowledge the status
+            socket.emit('micStatusAck', { status });
+        } catch (error) {
+            PairingLogger.error('micPermissionResult event error', { error: error.message, stack: error.stack });
+        }
+    });
+
+    /**
      * Event: disconnect
      * Handles user disconnection.
      */
