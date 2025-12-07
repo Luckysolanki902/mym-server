@@ -126,16 +126,19 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 lastHeartbeat: Date.now()
             });
 
-            // Add to enhanced pairing queue
-            pairingManager.addToQueue(userId, {
-                userGender,
-                userCollege,
-                preferredGender,
-                preferredCollege,
-                isVerified,
-            });
-
-            PairingLogger.queue('User added to queue', { userMID, queueStats: pairingManager.queue.getStats() });
+            // Add to enhanced pairing queue if requested (default to true for backward compatibility)
+            if (data.joinQueue !== false) {
+                pairingManager.addToQueue(userId, {
+                    userGender,
+                    userCollege,
+                    preferredGender,
+                    preferredCollege,
+                    isVerified,
+                });
+                PairingLogger.queue('User added to queue', { userMID, queueStats: pairingManager.queue.getStats() });
+            } else {
+                PairingLogger.socket('User identified but not added to queue', { userMID });
+            }
 
             PairingLogger.socket('User identified successfully', { userMID, socketId: socket.id });
         } catch (error) {
