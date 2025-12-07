@@ -609,29 +609,52 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 const room = userRooms.get(roomId);
                 
                 if (room) {
-                    const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
-                    const partner = usersMap.get(partnerMID);
-                    
-                    if (partner && partner.socket) {
-                        partner.socket.emit('callEnded', { reason });
+                    // Only notify partner if this is a real hangup, not a skip
+                    // Skip means user wants to find new partner, so don't tell the partner yet
+                    // (partner will be notified via pairDisconnected when user is paired with someone else)
+                    if (reason !== 'skip') {
+                        const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                        const partner = usersMap.get(partnerMID);
                         
-                        // Reset partner state
-                        partner.isPaired = false;
-                        partner.room = null;
-                        partner.pairedSocketId = null;
-                        partner.peerId = null;
-                        partner.peerReady = false;
-                        partner.callConnected = false;
+                        if (partner && partner.socket) {
+                            partner.socket.emit('callEnded', { reason });
+                            
+                            // Reset partner state
+                            partner.isPaired = false;
+                            partner.room = null;
+                            partner.pairedSocketId = null;
+                            partner.peerId = null;
+                            partner.peerReady = false;
+                            partner.callConnected = false;
+                        }
+                    } else {
+                        // For skip, still notify partner that pair disconnected
+                        const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                        const partner = usersMap.get(partnerMID);
+                        
+                        if (partner && partner.socket) {
+                            partner.socket.emit('pairDisconnected', { pair: userMID, reason: 'skip' });
+                            
+                            // Reset partner state
+                            partner.isPaired = false;
+                            partner.room = null;
+                            partner.pairedSocketId = null;
+                            partner.peerId = null;
+                            partner.peerReady = false;
+                            partner.callConnected = false;
+                        }
                     }
                 }
                 
-                // Reset user state
+                // Reset user state but DON'T remove from usersMap
+                // They may want to find a new partner
                 user.isPaired = false;
                 user.room = null;
                 user.pairedSocketId = null;
                 user.peerId = null;
                 user.peerReady = false;
                 user.callConnected = false;
+                user.state = reason === 'skip' ? 'WAITING' : 'DISCONNECTED';
                 
                 // Clean up the room
                 userRooms.delete(roomId);
