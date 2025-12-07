@@ -41,7 +41,7 @@ class EnhancedPairingManager {
     
     // Configuration
     this.config = {
-      processingIntervalMs: parseInt(process.env.QUEUE_PROCESSING_INTERVAL) || 1000,
+      processingIntervalMs: parseInt(process.env.QUEUE_PROCESSING_INTERVAL) || 500, // Reduced from 1000ms to 500ms for faster matching
       statusBroadcastIntervalMs: 1000, // Broadcast status every second
     };
     
@@ -152,6 +152,11 @@ class EnhancedPairingManager {
       });
       this.emitQueueStatus(user);
       PairingLogger.socket('Queue acknowledgment sent', { userMID, position });
+    }
+
+    // Trigger immediate pairing attempt if there are 2+ users in queue
+    if (this.queue.size() >= 2 && !this.isPairingRunning) {
+      setImmediate(() => this.processQueue());
     }
 
     return {
@@ -454,6 +459,22 @@ class EnhancedPairingManager {
       user2.callState = 'DIALING';
     }
 
+    // Validate stranger gender is present - critical for UI
+    if (!pairingData1.strangerGender) {
+      PairingLogger.error('CRITICAL: Missing strangerGender in pairingData1', {
+        user2MID: user2.userMID,
+        user2Gender: user2.userGender,
+        pairingData1
+      });
+    }
+    if (!pairingData2.strangerGender) {
+      PairingLogger.error('CRITICAL: Missing strangerGender in pairingData2', {
+        user1MID: user1.userMID,
+        user1Gender: user1.userGender,
+        pairingData2
+      });
+    }
+
     // Emit with retry logic for race conditions
     const emitWithRetry = (user, data, userLabel) => {
       if (user.socket && user.socket.connected) {
@@ -461,7 +482,8 @@ class EnhancedPairingManager {
         PairingLogger.socket(`Emitted pairingSuccess to ${userLabel}`, { 
           userMID: user.userMID, 
           socketId: user.socket.id,
-          roomId 
+          roomId,
+          strangerGender: data.strangerGender
         });
       } else {
   PairingLogger.warn(`${userLabel} socket not ready, retrying...`, { 
@@ -477,7 +499,8 @@ class EnhancedPairingManager {
             PairingLogger.socket(`Retry successful: Emitted pairingSuccess to ${userLabel}`, { 
               userMID: user.userMID, 
               socketId: user.socket.id,
-              roomId 
+              roomId,
+              strangerGender: data.strangerGender
             });
           } else {
             PairingLogger.error(`${userLabel} socket still not connected after retry`, { 

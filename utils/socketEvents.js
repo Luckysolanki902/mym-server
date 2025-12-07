@@ -55,6 +55,20 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 throw new Error('Invalid user identification data: Missing userMID.');
             }
 
+            // Validate userGender is present - required for proper UI messaging
+            if (!userGender || !['male', 'female'].includes(userGender)) {
+                PairingLogger.error('Identify failed - invalid or missing userGender', {
+                    userMID,
+                    userGender,
+                    socketId: socket.id
+                });
+                socket.emit('identifyError', { 
+                    error: 'INVALID_GENDER',
+                    message: 'User gender is required for pairing'
+                });
+                return;
+            }
+
             // Validate socket is actually connected
             if (!socket || !socket.connected) {
                 PairingLogger.error('Identify failed - socket not connected', { 
