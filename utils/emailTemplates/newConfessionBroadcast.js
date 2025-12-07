@@ -10,23 +10,20 @@ const getNewConfessionBroadcastTemplate = ({ gender, college, confessionContent,
     ? confessionContent.substring(0, 100) + '...' 
     : confessionContent || 'Check it out...';
 
-  const subject = `☕️ Tea Alert: New Confession from ${college}`;
+  const subject = `New Confession from ${college}`;
   
   const text = `
-Tea Alert: New Confession from ${college}
-
-A ${genderTerm} from ${college} just posted this:
+A ${genderTerm} from ${college} just posted:
 
 "${preview}"
 
-You won't believe the rest of the story. Read it before it gets buried in the feed.
-
-Read Confession: ${pageUrl}/confession/${confessionId}
-
-- The Spyll Team
+Read the full story:
+${pageUrl}/confession/${confessionId}
   `.trim();
 
   return { subject, text };
 };
+
+module.exports = { getNewConfessionBroadcastTemplate };
 
 module.exports = { getNewConfessionBroadcastTemplate };

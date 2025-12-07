@@ -26,9 +26,49 @@ app.use(cors({
 const User = require('./models/User');
 const { sendNotification } = require('./utils/emailService');
 const { getNewConfessionBroadcastTemplate } = require('./utils/emailTemplates/newConfessionBroadcast');
+const cron = require('node-cron');
+const { getDailyReminderTemplate } = require('./utils/emailTemplates/dailyReminder');
 
 // Create a Mutex to ensure broadcasts are processed sequentially
 const broadcastMutex = new Mutex();
+
+// --- Scheduled Tasks ---
+// Run every day at 6:00 PM IST (12:30 PM UTC)
+cron.schedule('30 12 * * *', async () => {
+  console.log('[Cron] ⏰ Starting Daily 6PM Reminder Broadcast...');
+  
+  // Use the mutex to prevent overlapping with confession broadcasts
+  broadcastMutex.runExclusive(async () => {
+    try {
+      const users = await User.find({ isVerified: true }).select('email').lean();
+      console.log(`[Cron] 🎯 Found ${users.length} verified users for daily reminder.`);
+
+      const { subject, text } = getDailyReminderTemplate();
+      
+      let sentCount = 0;
+      const BATCH_SIZE = 50;
+
+      for (let i = 0; i < users.length; i += BATCH_SIZE) {
+        const batch = users.slice(i, i + BATCH_SIZE);
+        const promises = batch.map(user => sendNotification({ 
+            to: user.email, 
+            subject, 
+            text
+        }));
+        
+        await Promise.allSettled(promises);
+        sentCount += batch.length;
+        console.log(`[Cron] 📨 Sent ${sentCount}/${users.length} reminders`);
+        
+        // Small delay to be polite to SMTP server
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      console.log('[Cron] ✅ Daily Reminder Broadcast Complete.');
+    } catch (error) {
+      console.error('[Cron] ❌ Error in daily reminder:', error);
+    }
+  });
+});
 
 app.post('/broadcast-confession', async (req, res) => {
   const { confessionId, college, gender, confessionContent, secret } = req.body;
