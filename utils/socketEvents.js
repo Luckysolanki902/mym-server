@@ -613,7 +613,8 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                     // Skip means user wants to find new partner, so don't tell the partner yet
                     // (partner will be notified via pairDisconnected when user is paired with someone else)
                     if (reason !== 'skip') {
-                        const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                        // Room stores full user objects, access userMID from them
+                        const partnerMID = room.user1?.userMID === userMID ? room.user2?.userMID : room.user1?.userMID;
                         const partner = usersMap.get(partnerMID);
                         
                         if (partner && partner.socket) {
@@ -629,7 +630,8 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                         }
                     } else {
                         // For skip, still notify partner that pair disconnected
-                        const partnerMID = room.user1 === userMID ? room.user2 : room.user1;
+                        // Room stores full user objects, access userMID from them
+                        const partnerMID = room.user1?.userMID === userMID ? room.user2?.userMID : room.user1?.userMID;
                         const partner = usersMap.get(partnerMID);
                         
                         if (partner && partner.socket) {
