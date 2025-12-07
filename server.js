@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
+const { Mutex } = require('async-mutex'); // Import Mutex for queueing
 const { ExpressPeerServer } = require('peer');
 const handleSocketEvents = require('./utils/socketEvents');
 const PairingManager = require('./utils/pairingManger');
@@ -13,11 +14,75 @@ const audioCallMetrics = require('./utils/audioCall/metrics');
 const app = express();
 const server = http.createServer(app);
 
+app.use(express.json()); // Parse JSON bodies
+
 // Enable CORS for all origins
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST'],
 }));
+
+// --- Broadcast Logic ---
+const User = require('./models/User');
+const { sendNotification } = require('./utils/emailService');
+const { getNewConfessionBroadcastTemplate } = require('./utils/emailTemplates/newConfessionBroadcast');
+
+// Create a Mutex to ensure broadcasts are processed sequentially
+const broadcastMutex = new Mutex();
+
+app.post('/broadcast-confession', async (req, res) => {
+  const { confessionId, college, gender, confessionContent, secret } = req.body;
+
+  // Security Check
+  if (secret !== process.env.SECRET_KEY) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  // Send response immediately to avoid blocking the client
+  res.status(200).json({ message: 'Broadcast queued successfully' });
+
+  // Run the broadcast logic inside a Mutex lock
+  // This ensures that if multiple confessions come in at once, they are processed one by one
+  // preventing SMTP rate limit issues.
+  broadcastMutex.runExclusive(async () => {
+    try {
+      console.log(`[Broadcast Server] 🚀 Starting broadcast for Confession ${confessionId}`);
+      
+      // Fetch all verified users
+      const users = await User.find({ isVerified: true }).select('email').lean();
+      console.log(`[Broadcast Server] 🎯 Found ${users.length} verified users.`);
+
+      const { subject, text } = getNewConfessionBroadcastTemplate({
+        gender,
+        college,
+        confessionContent,
+        confessionId
+      });
+
+      let sentCount = 0;
+      const BATCH_SIZE = 50; // Node.js can handle higher concurrency
+
+      // Process in chunks
+      for (let i = 0; i < users.length; i += BATCH_SIZE) {
+        const batch = users.slice(i, i + BATCH_SIZE);
+        const promises = batch.map(user => sendNotification({ to: user.email, subject, text }));
+        
+        await Promise.allSettled(promises);
+        sentCount += batch.length;
+        console.log(`[Broadcast Server] 📨 Sent ${sentCount}/${users.length} (Confession: ${confessionId})`);
+        
+        // Small delay to be polite to SMTP server
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      console.log(`[Broadcast Server] ✅ Broadcast Complete for Confession ${confessionId}.`);
+
+    } catch (error) {
+      console.error('[Broadcast Server] ❌ Error:', error);
+    }
+  });
+});
+// -----------------------
 
 const io = socketIO(server, {
   cors: {
