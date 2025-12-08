@@ -183,6 +183,28 @@ const videoCallUsers = new Map();
 const videoCallQueue = [];
 const videoCallRooms = new Map();
 
+// --- Broadcast Online Count to All Clients ---
+const broadcastOnlineCount = () => {
+  const textChatCount = textChatUsers.size;
+  const audioCallCount = audioCallUsers.size;
+  const videoCallCount = videoCallUsers.size;
+  
+  console.log(`[Online Count] Broadcasting: textChat=${textChatCount}, audioCall=${audioCallCount}, videoCall=${videoCallCount}`);
+  
+  // Emit to ALL connected sockets
+  io.emit('roundedUsersCount', {
+    textChat: textChatCount,
+    audioCall: audioCallCount,
+    videoCall: videoCallCount
+  });
+};
+
+// Broadcast count every 3 seconds
+setInterval(broadcastOnlineCount, 3000);
+
+// Also export for use in socketEvents when users join/leave
+global.broadcastOnlineCount = broadcastOnlineCount;
+
 // Create ENHANCED pairing managers for different page types
 const textChatPairingManager = new EnhancedPairingManager(io, textChatUsers, textChatRooms, 'textchat');
 const audioCallPairingManager = new EnhancedPairingManager(io, audioCallUsers, audioCallRooms, 'audiocall', {

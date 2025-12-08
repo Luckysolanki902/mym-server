@@ -126,6 +126,11 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 lastHeartbeat: Date.now()
             });
 
+            // Broadcast updated online count immediately
+            if (typeof global.broadcastOnlineCount === 'function') {
+                global.broadcastOnlineCount();
+            }
+
             // Add to enhanced pairing queue if requested (default to true for backward compatibility)
             if (data.joinQueue !== false) {
                 pairingManager.addToQueue(userId, {
@@ -780,6 +785,12 @@ function handleSocketEvents(io, socket, usersMap, userQueue, userRooms, pairingM
                 // Remove from enhanced pairing queue
                 pairingManager.removeFromQueue(socket.userMID);
                 usersMap.delete(socket.userMID);
+                
+                // Broadcast updated online count immediately
+                if (typeof global.broadcastOnlineCount === 'function') {
+                    global.broadcastOnlineCount();
+                }
+                
                 PairingLogger.socket('User removed from system on disconnect', { 
                     userMID: socket.userMID, 
                     queueStats: pairingManager.queue.getStats() 
